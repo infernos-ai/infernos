@@ -33,9 +33,7 @@ impl MockLightningBackend {
 
     pub async fn simulate_payment(&self, payment_hash: &PaymentHash) {
         let mut lock = self.settled_invoices.lock().await;
-        if let Some(settled) = lock.get_mut(&payment_hash.0) {
-            *settled = true;
-        }
+        lock.insert(payment_hash.0.clone(), true);
     }
 }
 
