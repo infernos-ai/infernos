@@ -11,6 +11,9 @@ pub enum ClientError {
     #[error("HTTP request error: {0}")]
     Http(#[from] reqwest::Error),
 
+    #[error("Malformed L402 challenge: {0}")]
+    MalformedChallenge(String),
+
     #[error("Protocol error: {0}")]
     Protocol(String),
 }
