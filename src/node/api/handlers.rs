@@ -128,6 +128,10 @@ pub async fn chat_completions(
         "X-Infernos-Remaining-Budget-Sats",
         remaining.0.to_string().parse().unwrap(),
     );
+    response_headers.insert(
+        "X-Infernos-Charged-Sats",
+        cost.0.to_string().parse().unwrap(),
+    );
 
     if is_stream {
         let stream = state.proxy.stream_chat_completion(payload).await?;
