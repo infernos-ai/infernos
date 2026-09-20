@@ -1,0 +1,231 @@
+use async_trait::async_trait;
+use infernos::client::budget::ClientBudgetTracker;
+use infernos::client::error::ClientError;
+use infernos::client::openai::{ChatCompletionRequest, ChatMessage};
+use infernos::client::pay::LightningPaymentProvider;
+use infernos::client::InfernosClient;
+use infernos::common::types::{PaymentHash, Satoshis};
+use infernos::config::schema::{
+    LightningConfig, NodeConfig, PricingConfig, ServerConfig, UpstreamConfig,
+};
+use infernos::node::api::routes::create_routes;
+use infernos::node::api::AppState;
+use infernos::node::gate::budget::SessionBudgetManager;
+use infernos::node::gate::macaroon::MacaroonService;
+use infernos::node::lightning::backend::LightningBackend;
+use infernos::node::lightning::invoice::Invoice;
+use infernos::node::proxy::openai::OpenAiProxy;
+use serde_json::json;
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+/// A node-side lightning backend that uses a deterministic hash so the client can "pay" it
+#[derive(Clone)]
+struct DeterministicNodeLightning {
+    is_settled: Arc<tokio::sync::Mutex<bool>>,
+}
+
+#[async_trait]
+impl LightningBackend for DeterministicNodeLightning {
+    async fn create_invoice(
+        &self,
+        amount_sats: Satoshis,
+        _memo: &str,
+    ) -> infernos::common::error::Result<Invoice> {
+        let preimage = "0000000000000000000000000000000000000000000000000000000000000000";
+        let payment_hash =
+            infernos::node::gate::verify::L402Verifier::hash_preimage(preimage).unwrap();
+
+        Ok(Invoice {
+            bolt11: format!("lnbc{}mock", amount_sats.0),
+            payment_hash,
+            amount: amount_sats,
+        })
+    }
+
+    async fn is_invoice_settled(
+        &self,
+        _payment_hash: &PaymentHash,
+    ) -> infernos::common::error::Result<bool> {
+        let settled = *self.is_settled.lock().await;
+        Ok(settled)
+    }
+}
+
+/// A client-side payment provider that "pays" the deterministic invoice by returning the expected preimage
+struct DeterministicClientPaymentProvider {
+    node_backend: DeterministicNodeLightning,
+}
+
+#[async_trait]
+impl LightningPaymentProvider for DeterministicClientPaymentProvider {
+    async fn pay_invoice(&self, _invoice: &str) -> Result<String, ClientError> {
+        // Mark as settled on the node side!
+        *self.node_backend.is_settled.lock().await = true;
+
+        // Return the preimage that hashes to the node's deterministic payment_hash
+        Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string())
+    }
+}
+
+#[tokio::test]
+async fn test_end_to_end_client_node_integration() {
+    // 1. Setup mock upstream (e.g., Ollama or OpenAI)
+    let upstream_mock = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-123",
+            "object": "chat.completion",
+            "created": 1677652288,
+            "model": "llama3.2",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Hello from the mocked upstream!"
+                },
+                "finish_reason": "stop"
+            }]
+        })))
+        .mount(&upstream_mock)
+        .await;
+
+    // 2. Setup Node Server State
+    let node_lightning = DeterministicNodeLightning {
+        is_settled: Arc::new(tokio::sync::Mutex::new(false)),
+    };
+
+    let config = NodeConfig {
+        server: ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+        },
+        pricing: PricingConfig {
+            default_price_sats: Satoshis(10),
+        },
+        upstream: UpstreamConfig {
+            url: upstream_mock.uri(),
+        },
+        lightning: LightningConfig::default(),
+        data_dir: ".infernos_test_data".to_string(),
+    };
+
+    let state = AppState {
+        config: Arc::new(config),
+        lightning: Arc::new(node_lightning.clone()),
+        budget_manager: Arc::new(SessionBudgetManager::new()),
+        macaroon_service: Arc::new(MacaroonService::new(
+            b"test-secret-key-0000000000000000".to_vec(),
+            "infernos-node",
+        )),
+        proxy: OpenAiProxy::new(upstream_mock.uri()),
+    };
+
+    let app = create_routes(state);
+
+    // 3. Start Node Server on random port
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let node_url = format!("http://127.0.0.1:{}", port);
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // 4. Setup Infernos Client
+    let client_provider = Arc::new(DeterministicClientPaymentProvider {
+        node_backend: node_lightning,
+    });
+
+    let budget_tracker = Arc::new(ClientBudgetTracker::new(100));
+
+    let client = InfernosClient::builder()
+        .node_url(node_url)
+        .payment_provider(client_provider)
+        .build()
+        .unwrap()
+        .with_budget(budget_tracker.clone());
+
+    // 5. Create new session
+    client
+        .create_session(500)
+        .await
+        .expect("Client should successfully get a challenge, pay it, and cache L402");
+
+    let req = ChatCompletionRequest {
+        model: "llama3.2".to_string(),
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: "Hello!".to_string(),
+        }],
+        stream: None,
+    };
+
+    let response = client
+        .chat(&req)
+        .await
+        .expect("Client should successfully authorize with cached L402");
+
+    assert_eq!(
+        response.choices[0].message.content,
+        "Hello from the mocked upstream!"
+    );
+
+    // Budget should be decremented by 10 (since default expected price is 10)
+    assert_eq!(budget_tracker.remaining(), 90);
+}
+
+#[tokio::test]
+async fn test_client_pre_flight_budget_rejection() {
+    let mock_server = MockServer::start().await;
+
+    // We don't even need the node to respond because the request should be blocked locally.
+    // We can just set up a dummy client with a small budget.
+
+    let budget_tracker = Arc::new(ClientBudgetTracker::new(5)); // Only 5 sats!
+
+    let provider = Arc::new(DeterministicClientPaymentProvider {
+        node_backend: DeterministicNodeLightning {
+            is_settled: Arc::new(tokio::sync::Mutex::new(false)),
+        },
+    });
+
+    let client = InfernosClient::builder()
+        .node_url(mock_server.uri())
+        .payment_provider(provider)
+        .build()
+        .expect("Client should build");
+
+    let client = client.with_budget(budget_tracker.clone());
+
+    let req = ChatCompletionRequest {
+        model: "llama3.2".to_string(),
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: "Hello!".to_string(),
+        }],
+        stream: None,
+    };
+
+    let result = client.chat(&req).await;
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        ClientError::BudgetExceeded { allocated, needed } => {
+            assert_eq!(allocated, 5);
+            assert_eq!(needed, 10);
+        }
+        _ => panic!("Expected BudgetExceeded error"),
+    }
+
+    // Ensure no requests hit the upstream mock server
+    let received_requests = mock_server.received_requests().await.unwrap_or(vec![]);
+    assert_eq!(
+        received_requests.len(),
+        0,
+        "No requests should have been made to the server"
+    );
+}

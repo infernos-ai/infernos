@@ -13,6 +13,9 @@ pub enum Error {
     #[error("Payment required: invoice={invoice}, token={token}")]
     PaymentRequired { invoice: String, token: String },
 
+    #[error("Session required. Please call /v1/session/new to establish a payment session.")]
+    SessionRequired,
+
     #[error("L402 verification failed: {0}")]
     VerificationFailed(String),
 

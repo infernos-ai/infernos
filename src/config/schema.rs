@@ -82,6 +82,28 @@ pub struct NodeConfig {
     pub pricing: PricingConfig,
     #[serde(default)]
     pub lightning: LightningConfig,
+    #[serde(default = "default_data_dir")]
+    pub data_dir: String,
+}
+
+fn default_data_dir() -> String {
+    ".infernos".to_string()
+}
+
+impl NodeConfig {
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> crate::common::error::Result<Self> {
+        let contents = std::fs::read_to_string(&path).map_err(|e| {
+            crate::common::error::Error::Config(format!(
+                "Failed to read config file {}: {}",
+                path.as_ref().display(),
+                e
+            ))
+        })?;
+        let config: Self = toml::from_str(&contents).map_err(|e| {
+            crate::common::error::Error::Config(format!("Failed to parse TOML config: {}", e))
+        })?;
+        Ok(config)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
