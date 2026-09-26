@@ -18,7 +18,40 @@ impl InfernosServer {
     }
 
     pub async fn run(&self) -> Result<()> {
-        self.run_until_shutdown(std::future::pending()).await
+        let shutdown_signal = async {
+            let ctrl_c = async {
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("failed to install Ctrl+C handler");
+            };
+
+            #[cfg(unix)]
+            let terminate = async {
+                match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                    Ok(mut sig) => {
+                        sig.recv().await;
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to install SIGTERM signal handler: {}", e);
+                        std::future::pending::<()>().await;
+                    }
+                }
+            };
+
+            #[cfg(not(unix))]
+            let terminate = std::future::pending::<()>();
+
+            tokio::select! {
+                _ = ctrl_c => {
+                    tracing::info!("Received Ctrl+C (SIGINT), initiating graceful shutdown...");
+                },
+                _ = terminate => {
+                    tracing::info!("Received SIGTERM, initiating graceful shutdown...");
+                },
+            }
+        };
+
+        self.run_until_shutdown(shutdown_signal).await
     }
 
     pub async fn run_until_shutdown<F>(&self, shutdown: F) -> Result<()>

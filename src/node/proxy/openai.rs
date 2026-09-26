@@ -97,6 +97,34 @@ impl OpenAiProxy {
         })
     }
 
+    pub async fn list_models(&self) -> Result<Value> {
+        let url = format!("{}/v1/models", self.upstream_url);
+
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            if e.is_timeout() {
+                crate::common::error::Error::Upstream(format!("Upstream timeout: {}", e))
+            } else {
+                crate::common::error::Error::Upstream(format!("Upstream connection error: {}", e))
+            }
+        })?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let err_text = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown upstream error".to_string());
+            return Err(crate::common::error::Error::Upstream(format!(
+                "Upstream error ({}): {}",
+                status, err_text
+            )));
+        }
+
+        resp.json::<Value>().await.map_err(|e| {
+            crate::common::error::Error::Upstream(format!("Upstream JSON parse error: {}", e))
+        })
+    }
+
     pub async fn stream_chat_completion(
         &self,
         request: Value,

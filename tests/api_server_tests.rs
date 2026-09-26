@@ -80,6 +80,72 @@ async fn test_models_endpoint() {
 }
 
 #[tokio::test]
+async fn test_models_endpoint_dynamic_upstream() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": [
+                {
+                    "id": "deepseek-coder:6.7b",
+                    "object": "model",
+                    "created": 1700000000,
+                    "owned_by": "ollama"
+                }
+            ]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let config = NodeConfig {
+        server: infernos::config::schema::ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
+        upstream: infernos::config::schema::UpstreamConfig {
+            url: mock_server.uri(),
+        },
+        lightning: infernos::config::schema::LightningConfig::default(),
+        data_dir: ".infernos_test_data".to_string(),
+    };
+
+    let proxy = OpenAiProxy::new(config.upstream.url.clone());
+    let lightning = Arc::new(MockLightningBackend::new());
+    let budget_manager = Arc::new(SessionBudgetManager::new());
+    let macaroon_service = Arc::new(MacaroonService::new(vec![0u8; 32], "infernos-node"));
+
+    let state = AppState {
+        config: Arc::new(config),
+        lightning,
+        budget_manager,
+        macaroon_service,
+        proxy,
+    };
+
+    let app = create_routes(state);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/models")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(body_json["data"][0]["id"], "deepseek-coder:6.7b");
+}
+
+#[tokio::test]
 async fn test_chat_completions_requires_payment() {
     let app = setup_app();
 
