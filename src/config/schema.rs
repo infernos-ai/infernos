@@ -40,13 +40,34 @@ impl Default for UpstreamConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PricingConfig {
+    #[serde(default = "default_price_sats", alias = "sats_per_request")]
     pub default_price_sats: Satoshis,
+    #[serde(default)]
+    pub sats_per_prompt_token: u64,
+    #[serde(default)]
+    pub sats_per_completion_token: u64,
+}
+
+fn default_price_sats() -> Satoshis {
+    Satoshis(10)
+}
+
+impl PricingConfig {
+    pub fn new(default_price_sats: Satoshis) -> Self {
+        Self {
+            default_price_sats,
+            sats_per_prompt_token: 0,
+            sats_per_completion_token: 0,
+        }
+    }
 }
 
 impl Default for PricingConfig {
     fn default() -> Self {
         Self {
             default_price_sats: Satoshis(10),
+            sats_per_prompt_token: 0,
+            sats_per_completion_token: 0,
         }
     }
 }

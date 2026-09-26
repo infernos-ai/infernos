@@ -41,9 +41,7 @@ fn setup_app() -> axum::Router {
             host: "127.0.0.1".to_string(),
             port: 8080,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: "http://localhost:8080".to_string(),
         },
