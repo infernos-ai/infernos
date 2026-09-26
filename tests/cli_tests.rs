@@ -3,12 +3,10 @@ use std::process::Command;
 
 #[tokio::test]
 async fn test_cli_help() {
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--")
+    let output = Command::new(env!("CARGO_BIN_EXE_infernos"))
         .arg("--help")
         .output()
-        .expect("Failed to execute cargo run");
+        .expect("Failed to execute infernos binary");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -22,13 +20,11 @@ async fn test_cli_node_status_stopped() {
     // Make sure no node is running and PID is clear
     let _ = std::fs::remove_file(Path::new(".infernos/node.pid"));
 
-    let output = Command::new("cargo")
-        .arg("run")
-        .arg("--")
+    let output = Command::new(env!("CARGO_BIN_EXE_infernos"))
         .arg("node")
         .arg("status")
         .output()
-        .expect("Failed to execute cargo run");
+        .expect("Failed to execute infernos binary");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);

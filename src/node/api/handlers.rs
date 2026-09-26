@@ -263,6 +263,11 @@ pub async fn mock_pay(
     State(state): State<AppState>,
     Json(payload): Json<MockPayRequest>,
 ) -> Result<impl IntoResponse, Error> {
+    if state.config.lightning.backend != crate::config::schema::LightningBackendType::Mock {
+        return Err(Error::Forbidden(
+            "Mock payment endpoint is only available when lightning backend is 'mock'".to_string(),
+        ));
+    }
     let preimage = state
         .lightning
         .pay_invoice(&payload.invoice)
