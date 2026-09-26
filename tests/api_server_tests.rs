@@ -21,9 +21,7 @@ fn setup_app() -> axum::Router {
             host: "127.0.0.1".to_string(),
             port: 8080,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: "http://localhost:8080".to_string(),
         },
@@ -136,9 +134,7 @@ async fn test_chat_completions_pay_per_request_flow() {
             host: "127.0.0.1".to_string(),
             port: 8080,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: mock_server.uri(),
         },
@@ -285,9 +281,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
             host: "127.0.0.1".to_string(),
             port: 8080,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: mock_server.uri(),
         },
@@ -411,9 +405,7 @@ async fn test_chat_completions_capability_authorization() {
             host: "127.0.0.1".to_string(),
             port: 8080,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: "http://localhost:8080".to_string(),
         },

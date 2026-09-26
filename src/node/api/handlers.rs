@@ -86,7 +86,15 @@ pub async fn chat_completions(
         .unwrap()
         .as_secs();
 
-    let cost = state.config.pricing.default_price_sats;
+    let prompt_tokens =
+        crate::node::pricing::PricingCalculator::estimate_prompt_tokens_from_payload(&payload);
+    let max_completion_tokens = payload
+        .get("max_tokens")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize);
+    let cost = state
+        .pricing_calculator()
+        .calculate_cost(prompt_tokens, max_completion_tokens);
     let req_model = payload.get("model").and_then(|m| m.as_str());
 
     let auth_header = headers.get("Authorization");

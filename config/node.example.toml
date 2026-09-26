@@ -18,8 +18,12 @@ url = "http://127.0.0.1:11434"
 
 [pricing]
 # The default price per inference request, specified in Satoshis (sats).
-# Default: 10
+# Default: 10 (or sats_per_request = 10)
 default_price_sats = 10
+# Optional: fine-grained per-token pricing in milli-satoshis (or satoshi fraction)
+# sats_per_prompt_token = 0.001
+# sats_per_completion_token = 0.002
+
 
 [lightning]
 # Lightning backend type: "mock", "lnd", or "nwc"
