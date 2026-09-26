@@ -53,6 +53,7 @@ cargo test
 # Run a specific test suite
 cargo test --test api_server_tests
 cargo test --test proxy_openai_tests
+cargo test --test lnd_backend_tests
 cargo test --test cli_tests
 cargo test --test privacy_audit_tests
 ```

@@ -110,3 +110,105 @@ async fn test_lnd_backend_missing_config_errors() {
     let err_str = result.err().unwrap().to_string();
     assert!(err_str.contains("Missing lnd_rpc_host") || err_str.contains("configuration"));
 }
+
+#[tokio::test]
+async fn test_lnd_backend_testnet_flow() {
+    let mock_lnd = MockServer::start().await;
+
+    let hash_bytes = [11u8; 32];
+    let hash_b64 = base64::engine::general_purpose::STANDARD.encode(hash_bytes);
+    let hash_hex = hex::encode(hash_bytes);
+    let hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash_bytes);
+    // Standard testnet invoice prefix: lntb
+    let testnet_invoice = "lntb10u1pvjql8zpp5...";
+
+    // 1. Mock invoice creation on Testnet LND
+    Mock::given(method("POST"))
+        .and(path("/v1/invoices"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "r_hash": hash_b64,
+            "payment_request": testnet_invoice,
+            "add_index": "100"
+        })))
+        .mount(&mock_lnd)
+        .await;
+
+    // 2. Mock invoice lookup on Testnet LND
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/invoice/{}", hash_b64url)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "settled": true,
+            "state": "SETTLED"
+        })))
+        .mount(&mock_lnd)
+        .await;
+
+    let backend = LndBackend::new(mock_lnd.uri(), "macaroon_testnet", Client::new());
+
+    // Create testnet invoice
+    let invoice = backend
+        .create_invoice(Satoshis(10), "Testnet Inference")
+        .await
+        .expect("Failed to create testnet invoice");
+
+    assert!(invoice.bolt11.starts_with("lntb"));
+    assert_eq!(invoice.payment_hash.0, hash_hex);
+
+    // Verify settlement on testnet LND
+    let is_settled = backend
+        .is_invoice_settled(&invoice.payment_hash)
+        .await
+        .expect("Failed to check testnet settlement");
+    assert!(is_settled);
+}
+
+#[tokio::test]
+async fn test_lnd_backend_mainnet_flow() {
+    let mock_lnd = MockServer::start().await;
+
+    let hash_bytes = [22u8; 32];
+    let hash_b64 = base64::engine::general_purpose::STANDARD.encode(hash_bytes);
+    let hash_hex = hex::encode(hash_bytes);
+    let hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash_bytes);
+    // Standard mainnet invoice prefix: lnbc
+    let mainnet_invoice = "lnbc10u1pvjql8zpp5...";
+
+    // 1. Mock invoice creation on Mainnet LND
+    Mock::given(method("POST"))
+        .and(path("/v1/invoices"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "r_hash": hash_b64,
+            "payment_request": mainnet_invoice,
+            "add_index": "200"
+        })))
+        .mount(&mock_lnd)
+        .await;
+
+    // 2. Mock invoice lookup on Mainnet LND
+    Mock::given(method("GET"))
+        .and(path(format!("/v1/invoice/{}", hash_b64url)))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "settled": true,
+            "state": "SETTLED"
+        })))
+        .mount(&mock_lnd)
+        .await;
+
+    let backend = LndBackend::new(mock_lnd.uri(), "macaroon_mainnet", Client::new());
+
+    // Create mainnet invoice
+    let invoice = backend
+        .create_invoice(Satoshis(100), "Mainnet Production Inference")
+        .await
+        .expect("Failed to create mainnet invoice");
+
+    assert!(invoice.bolt11.starts_with("lnbc"));
+    assert_eq!(invoice.payment_hash.0, hash_hex);
+
+    // Verify settlement on mainnet LND
+    let is_settled = backend
+        .is_invoice_settled(&invoice.payment_hash)
+        .await
+        .expect("Failed to check mainnet settlement");
+    assert!(is_settled);
+}

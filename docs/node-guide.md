@@ -62,17 +62,66 @@ default_price_sats = 10
 # sats_per_completion_token = 0
 
 [lightning]
-# Lightning backend: "mock" (testing), "lnd", or "nwc"
-backend = "mock"
+# Lightning backend: "lnd", "mock", or "nwc"
+backend = "lnd"
 
-# For LND:
-# lnd_rpc_host = "localhost:10009"
-# lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+# Bitcoin network: "testnet" (for testing locally with testnet sats) or "mainnet" (live operations)
+network = "testnet"
+
+# LND REST configuration
+# lnd_rest_host = "https://127.0.0.1:8080"
+# lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/testnet/admin.macaroon"
 # lnd_tls_cert_path = "~/.lnd/tls.cert"
-
-# For Nostr Wallet Connect (NWC):
-# nwc_uri = "nostr+walletconnect://..."
 ```
+
+---
+
+## 3.1 Setting Up LND for Testnet vs Mainnet
+
+Infernos communicates directly with LND using its built-in REST API, requiring no heavy gRPC dependencies.
+
+### Option A: Testing Locally with Bitcoin Testnet (Recommended for Initial Setup)
+Testnet allows you to test real Lightning payments and session budgeting without risking real capital.
+
+1. **Start your LND node on testnet**:
+   Ensure LND's `lnd.conf` has `bitcoin.testnet=1` and `restlisten=0.0.0.0:8080`.
+2. **Configure Infernos for Testnet**:
+   ```toml
+   [lightning]
+   backend = "lnd"
+   network = "testnet"
+   lnd_rest_host = "https://127.0.0.1:8080"
+   lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/testnet/admin.macaroon"
+   lnd_tls_cert_path = "~/.lnd/tls.cert"
+   ```
+   *Note: Invoices generated on Testnet begin with the prefix `lntb`.*
+
+### Option B: Live Operation on Bitcoin Mainnet (Earning Real Sats)
+When you are ready to earn real Bitcoin Satoshis for serving inference:
+
+1. **Ensure your Mainnet LND node is fully synced and funded with channels**:
+   Ensure LND's `lnd.conf` has `bitcoin.mainnet=1` and `restlisten=0.0.0.0:8080`.
+2. **Configure Infernos for Mainnet**:
+   ```toml
+   [lightning]
+   backend = "lnd"
+   network = "mainnet"
+   lnd_rest_host = "https://127.0.0.1:8080"
+   lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+   lnd_tls_cert_path = "~/.lnd/tls.cert"
+   ```
+   *Note: Invoices generated on Mainnet begin with the standard prefix `lnbc`.*
+
+### Option C: Zero-Wallet Local Mock (Offline Development)
+For fast offline development and running the test suite without any Bitcoin node running:
+```toml
+[lightning]
+backend = "mock"
+```
+
+### Security Best Practices for Macaroons
+- **Least-Privilege Macaroon**: For production, you can use `invoice.macaroon` instead of `admin.macaroon` if you only need the node to generate invoices and verify settlement.
+- **TLS Verification**: Point `lnd_tls_cert_path` to your LND `tls.cert` so all HTTP REST calls are encrypted and certificate-verified.
 
 ---
 
@@ -92,12 +141,13 @@ Output:
 ```text
 Starting Infernos node...
 ✓ Configuration loaded from config/node.toml
-✓ Lightning backend: mock
+✓ Lightning backend: lnd (testnet)
 ✓ Upstream: http://127.0.0.1:11434
 ✓ Server listening on 0.0.0.0:8080
 
 Infernos node is running.
 ```
+*(If configured for mock, this will display `✓ Lightning backend: mock`)*
 
 ### Check Node Status & Health
 ```bash
@@ -113,7 +163,7 @@ PID:          42891
 Endpoint:     0.0.0.0:8080
 Upstream:     http://127.0.0.1:11434
 Price:        10 sats/request
-Lightning:    MOCK
+Lightning:    LND (testnet)
 ```
 
 ### Stop the Node
