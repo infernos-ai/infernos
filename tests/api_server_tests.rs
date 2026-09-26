@@ -102,12 +102,145 @@ async fn test_chat_completions_requires_payment() {
         .await
         .unwrap();
 
-    // A missing or invalid Authorization header should trigger a 402 Payment Required
+    // A missing Authorization header must trigger a 402 Payment Required with an L402 challenge
     assert_eq!(response.status(), StatusCode::PAYMENT_REQUIRED);
 
-    // It must NOT return a WWW-Authenticate header, it just tells the user to create a session
-    let auth_header = response.headers().get("WWW-Authenticate");
-    assert!(auth_header.is_none());
+    // It MUST return a standard WWW-Authenticate L402 challenge header with token and invoice
+    let auth_header = response
+        .headers()
+        .get("WWW-Authenticate")
+        .expect("Must return WWW-Authenticate header on 402");
+    let challenge_str = auth_header.to_str().unwrap();
+    assert!(challenge_str.starts_with("L402 "));
+    let challenge = L402Challenge::from_header_value(challenge_str)
+        .expect("Challenge header must be valid L402 format");
+    assert!(!challenge.macaroon.is_empty());
+    assert!(!challenge.invoice.is_empty());
+}
+
+#[tokio::test]
+async fn test_chat_completions_pay_per_request_flow() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "chatcmpl-test",
+            "choices": [{"message": {"role": "assistant", "content": "Hello! I am Infernos."}}]
+        })))
+        .mount(&mock_server)
+        .await;
+
+    let config = NodeConfig {
+        server: infernos::config::schema::ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+        },
+        pricing: PricingConfig {
+            default_price_sats: infernos::common::types::Satoshis(10),
+        },
+        upstream: infernos::config::schema::UpstreamConfig {
+            url: mock_server.uri(),
+        },
+        lightning: infernos::config::schema::LightningConfig::default(),
+        data_dir: ".infernos_test_data".to_string(),
+    };
+
+    let proxy = OpenAiProxy::new(config.upstream.url.clone());
+    let lightning = Arc::new(MockLightningBackend::new());
+    let budget_manager = Arc::new(SessionBudgetManager::new());
+    let macaroon_service = Arc::new(MacaroonService::new(
+        b"test-secret-key-0000000000000000".to_vec(),
+        "infernos-node",
+    ));
+
+    let state = AppState {
+        config: Arc::new(config),
+        lightning: lightning.clone(),
+        budget_manager,
+        macaroon_service: macaroon_service.clone(),
+        proxy,
+    };
+
+    let app = create_routes(state);
+
+    // 1. Initial unauthenticated request -> returns 402 challenge
+    let chat_body = json!({
+        "model": "llama3.2",
+        "messages": [{"role": "user", "content": "Hello"}]
+    });
+
+    let resp_unauth = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .body(Body::from(serde_json::to_vec(&chat_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp_unauth.status(), StatusCode::PAYMENT_REQUIRED);
+    let auth_header = resp_unauth
+        .headers()
+        .get("WWW-Authenticate")
+        .expect("Challenge header required");
+    let challenge = L402Challenge::from_header_value(auth_header.to_str().unwrap()).unwrap();
+    assert!(!challenge.invoice.is_empty());
+
+    // 2. Client pays invoice (derive known preimage & payment hash for mock backend)
+    let preimage_bytes = [0x77u8; 32];
+    let preimage_hex = hex::encode(preimage_bytes);
+    let known_payment_hash =
+        infernos::node::gate::verify::L402Verifier::hash_preimage(&preimage_hex).unwrap();
+    lightning.simulate_payment(&known_payment_hash).await;
+
+    // 3. Mint pay-per-request macaroon bound to this payment hash (NO session caveat!)
+    let ppr_macaroon = macaroon_service
+        .mint(
+            &known_payment_hash,
+            vec![infernos::node::gate::macaroon::Caveat::Capability(
+                "inference".to_string(),
+            )],
+        )
+        .unwrap();
+
+    let auth_val = format!(
+        "L402 {}:{}",
+        ppr_macaroon.to_base64().unwrap(),
+        preimage_hex
+    );
+
+    // 4. Retry request with Authorization header -> should succeed with 200 OK!
+    let resp_auth = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_val)
+                .body(Body::from(serde_json::to_vec(&chat_body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp_auth.status(),
+        StatusCode::OK,
+        "Pay-per-request should succeed without a session caveat"
+    );
+    let charged_header = resp_auth.headers().get("X-Infernos-Charged-Sats");
+    assert!(charged_header.is_some());
+    assert_eq!(charged_header.unwrap().to_str().unwrap(), "10");
+    // Should NOT have session budget remaining header because it is a direct pay-per-request
+    assert!(resp_auth
+        .headers()
+        .get("X-Infernos-Remaining-Budget-Sats")
+        .is_none());
 }
 
 #[tokio::test]

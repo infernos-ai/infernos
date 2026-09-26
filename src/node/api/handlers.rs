@@ -81,19 +81,65 @@ pub async fn chat_completions(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> Result<impl IntoResponse, Error> {
-    let auth_header = headers.get("Authorization");
-    if auth_header.is_none() {
-        return Err(Error::SessionRequired);
-    }
-
-    let auth_str = auth_header.unwrap().to_str().unwrap_or("");
-
-    let req_model = payload.get("model").and_then(|m| m.as_str());
-
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
+
+    let cost = state.config.pricing.default_price_sats;
+    let req_model = payload.get("model").and_then(|m| m.as_str());
+
+    let auth_header = headers.get("Authorization");
+    if auth_header.is_none()
+        || auth_header
+            .unwrap()
+            .to_str()
+            .unwrap_or("")
+            .trim()
+            .is_empty()
+    {
+        // Issue standard L402 challenge for direct pay-per-request
+        let invoice = state
+            .lightning
+            .create_invoice(cost, "Infernos Chat Completion")
+            .await
+            .map_err(|e| Error::Internal(e.to_string()))?;
+
+        let mut caveats = vec![
+            Caveat::Capability("inference".to_string()),
+            Caveat::ExpiresAt(now + 3600),
+        ];
+        if let Some(model_name) = req_model {
+            caveats.push(Caveat::Model(model_name.to_string()));
+        }
+
+        let macaroon = state
+            .macaroon_service
+            .mint(&invoice.payment_hash, caveats)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+
+        let challenge = L402Challenge::from_components(&macaroon, &invoice)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+
+        let mut challenge_headers = HeaderMap::new();
+        challenge_headers.insert(
+            "WWW-Authenticate",
+            challenge.to_header_value().parse().unwrap(),
+        );
+
+        return Ok((
+            StatusCode::PAYMENT_REQUIRED,
+            challenge_headers,
+            Json(json!({
+                "error": "Payment required",
+                "token": macaroon.to_base64().unwrap_or_default(),
+                "invoice": invoice.bolt11
+            })),
+        )
+            .into_response());
+    }
+
+    let auth_str = auth_header.unwrap().to_str().unwrap_or("");
 
     let credentials = L402Verifier::verify_header(
         &state.macaroon_service,
@@ -112,34 +158,35 @@ pub async fn chat_completions(
         ));
     }
 
-    // Extract session caveat
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        "X-Infernos-Charged-Sats",
+        cost.0.to_string().parse().unwrap(),
+    );
+
+    // Dual-mode authorization:
+    // If the macaroon has a session caveat, debit from the session budget.
+    // If no session caveat is present, this is a verified single pay-per-request credential.
     let (session_opt, _) =
         crate::node::gate::SessionBudgetManager::extract_session_caveats(&credentials.macaroon);
-    let session_id = session_opt
-        .ok_or_else(|| Error::VerificationFailed("Missing Session caveat".to_string()))?;
 
-    // Debit budget
-    let cost = state.config.pricing.default_price_sats;
-    let remaining = state
-        .budget_manager
-        .debit_session(&session_id, cost)
-        .await
-        .map_err(|e| Error::BudgetExhausted(e.to_string()))?;
+    if let Some(session_id) = session_opt {
+        let remaining = state
+            .budget_manager
+            .debit_session(&session_id, cost)
+            .await
+            .map_err(|e| Error::BudgetExhausted(e.to_string()))?;
+
+        response_headers.insert(
+            "X-Infernos-Remaining-Budget-Sats",
+            remaining.0.to_string().parse().unwrap(),
+        );
+    }
 
     let is_stream = payload
         .get("stream")
         .and_then(|s| s.as_bool())
         .unwrap_or(false);
-
-    let mut response_headers = HeaderMap::new();
-    response_headers.insert(
-        "X-Infernos-Remaining-Budget-Sats",
-        remaining.0.to_string().parse().unwrap(),
-    );
-    response_headers.insert(
-        "X-Infernos-Charged-Sats",
-        cost.0.to_string().parse().unwrap(),
-    );
 
     if is_stream {
         let stream = state.proxy.stream_chat_completion(payload).await?;
@@ -167,7 +214,7 @@ impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let (status, err_msg) = match &self {
             Error::PaymentRequired { invoice, token } => {
-                let challenge = format!("L402 macaroon=\"{}\", invoice=\"{}\"", token, invoice);
+                let challenge = format!("L402 token=\"{}\", invoice=\"{}\"", token, invoice);
                 let mut headers = HeaderMap::new();
                 headers.insert("WWW-Authenticate", challenge.parse().unwrap());
                 return (
