@@ -16,14 +16,23 @@ pub async fn health_check() -> impl IntoResponse {
     Json(json!({ "status": "ok", "service": "infernos-node" }))
 }
 
-pub async fn models(State(_state): State<AppState>) -> impl IntoResponse {
-    let data = vec![json!({
-        "id": "llama3.2",
-        "object": "model",
-        "created": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-        "owned_by": "infernos-node"
-    })];
-    Json(json!({ "object": "list", "data": data }))
+pub async fn models(State(state): State<AppState>) -> impl IntoResponse {
+    match state.proxy.list_models().await {
+        Ok(upstream_models) => Json(upstream_models),
+        Err(e) => {
+            tracing::warn!(
+                "Failed to query upstream models, falling back to default: {}",
+                e
+            );
+            let data = vec![json!({
+                "id": "llama3.2",
+                "object": "model",
+                "created": SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                "owned_by": "infernos-node"
+            })];
+            Json(json!({ "object": "list", "data": data }))
+        }
+    }
 }
 
 #[derive(Deserialize)]
