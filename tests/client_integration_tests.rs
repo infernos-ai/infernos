@@ -52,6 +52,11 @@ impl LightningBackend for DeterministicNodeLightning {
         let settled = *self.is_settled.lock().await;
         Ok(settled)
     }
+
+    async fn pay_invoice(&self, _invoice: &str) -> infernos::common::error::Result<String> {
+        *self.is_settled.lock().await = true;
+        Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string())
+    }
 }
 
 /// A client-side payment provider that "pays" the deterministic invoice by returning the expected preimage
@@ -228,4 +233,144 @@ async fn test_client_pre_flight_budget_rejection() {
         0,
         "No requests should have been made to the server"
     );
+}
+
+#[tokio::test]
+async fn test_client_session_expired_clears_auth() {
+    let mock_server = MockServer::start().await;
+
+    // Simulate 402 from the API server (chat completions)
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(402))
+        .mount(&mock_server)
+        .await;
+
+    let provider = Arc::new(DeterministicClientPaymentProvider {
+        node_backend: DeterministicNodeLightning {
+            is_settled: Arc::new(tokio::sync::Mutex::new(false)),
+        },
+    });
+
+    let client = InfernosClient::builder()
+        .node_url(mock_server.uri())
+        .payment_provider(provider)
+        .build()
+        .expect("Client should build");
+
+    // Inject a dummy auth token directly to simulate an existing but expired session
+    {
+        let mut auth_lock = client.l402_auth.write().unwrap();
+        *auth_lock = Some("L402 dummy:dummy".to_string());
+    }
+
+    let req = ChatCompletionRequest {
+        model: "llama3.2".to_string(),
+        messages: vec![],
+        stream: None,
+    };
+
+    let result = client.chat(&req).await;
+
+    assert!(result.is_err());
+
+    match result.unwrap_err() {
+        ClientError::SessionExpired => {}
+        _ => panic!("Expected SessionExpired error"),
+    }
+
+    // Prove that the client cleared the auth
+    let current_auth = client.l402_auth.read().unwrap().clone();
+    assert!(
+        current_auth.is_none(),
+        "Cached auth should be cleared after 402"
+    );
+}
+
+#[tokio::test]
+async fn test_chat_stream_success() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("chunk1chunk2"))
+        .mount(&mock_server)
+        .await;
+
+    let provider = Arc::new(DeterministicClientPaymentProvider {
+        node_backend: DeterministicNodeLightning {
+            is_settled: Arc::new(tokio::sync::Mutex::new(false)),
+        },
+    });
+
+    let client = InfernosClient::builder()
+        .node_url(mock_server.uri())
+        .payment_provider(provider)
+        .build()
+        .expect("Client should build");
+
+    {
+        let mut auth_lock = client.l402_auth.write().unwrap();
+        *auth_lock = Some("L402 valid".to_string());
+    }
+
+    let req = ChatCompletionRequest {
+        model: "llama3.2".to_string(),
+        messages: vec![],
+        stream: None,
+    };
+
+    let mut stream = client.chat_stream(&req).await.unwrap();
+
+    use futures_util::StreamExt;
+    let mut received = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        received.extend_from_slice(&chunk.unwrap());
+    }
+
+    let received_str = String::from_utf8(received).unwrap();
+    assert_eq!(received_str, "chunk1chunk2");
+}
+
+#[tokio::test]
+async fn test_chat_stream_session_expired_clears_auth() {
+    let mock_server = MockServer::start().await;
+
+    Mock::given(method("POST"))
+        .and(path("/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(402))
+        .mount(&mock_server)
+        .await;
+
+    let provider = Arc::new(DeterministicClientPaymentProvider {
+        node_backend: DeterministicNodeLightning {
+            is_settled: Arc::new(tokio::sync::Mutex::new(false)),
+        },
+    });
+
+    let client = InfernosClient::builder()
+        .node_url(mock_server.uri())
+        .payment_provider(provider)
+        .build()
+        .unwrap();
+
+    {
+        let mut auth_lock = client.l402_auth.write().unwrap();
+        *auth_lock = Some("L402 dummy".to_string());
+    }
+
+    let req = ChatCompletionRequest {
+        model: "llama".to_string(),
+        messages: vec![],
+        stream: None,
+    };
+
+    let result = client.chat_stream(&req).await;
+    match result {
+        Err(ClientError::SessionExpired) => {}
+        _ => panic!("Expected SessionExpired error"),
+    }
+
+    let current_auth = client.l402_auth.read().unwrap().clone();
+    assert!(current_auth.is_none());
 }

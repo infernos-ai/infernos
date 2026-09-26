@@ -232,6 +232,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
             vec![
                 infernos::node::gate::macaroon::Caveat::Session(session_uuid),
                 infernos::node::gate::macaroon::Caveat::Budget(budget_val),
+                infernos::node::gate::macaroon::Caveat::Capability("inference".to_string()),
             ],
         )
         .unwrap();
@@ -268,4 +269,163 @@ async fn test_api_e2e_flow_with_budget_debit() {
     let remaining_header = response2.headers().get("X-Infernos-Remaining-Budget-Sats");
     assert!(remaining_header.is_some());
     assert_eq!(remaining_header.unwrap().to_str().unwrap(), "490"); // 500 - 10
+}
+
+#[tokio::test]
+async fn test_chat_completions_capability_authorization() {
+    let config = NodeConfig {
+        server: infernos::config::schema::ServerConfig {
+            host: "127.0.0.1".to_string(),
+            port: 8080,
+        },
+        pricing: PricingConfig {
+            default_price_sats: infernos::common::types::Satoshis(10),
+        },
+        upstream: infernos::config::schema::UpstreamConfig {
+            url: "http://localhost:8080".to_string(),
+        },
+        lightning: infernos::config::schema::LightningConfig::default(),
+        data_dir: ".infernos_test_data".to_string(),
+    };
+
+    let proxy = OpenAiProxy::new(config.upstream.url.clone());
+    let lightning = Arc::new(MockLightningBackend::new());
+    let budget_manager = Arc::new(SessionBudgetManager::new());
+
+    let state = AppState {
+        config: Arc::new(config),
+        lightning: lightning.clone(),
+        budget_manager: budget_manager.clone(),
+        macaroon_service: Arc::new(MacaroonService::new(
+            b"test-secret-key-0000000000000000".to_vec(),
+            "infernos-node",
+        )),
+        proxy,
+    };
+
+    let macaroon_service = state.macaroon_service.clone();
+    let app = create_routes(state);
+
+    let preimage_bytes = [0x5au8; 32];
+    let preimage_hex = hex::encode(preimage_bytes);
+    let known_payment_hash =
+        infernos::node::gate::verify::L402Verifier::hash_preimage(&preimage_hex).unwrap();
+    lightning.simulate_payment(&known_payment_hash).await;
+
+    let chat_body = json!({
+        "model": "llama3.2",
+        "messages": [{"role": "user", "content": "Hello"}]
+    });
+
+    let send_req = |macaroon_obj: infernos::node::gate::macaroon::Macaroon,
+                    app: axum::Router,
+                    preimage: String,
+                    body_val: serde_json::Value| async move {
+        let auth_val = format!("L402 {}:{}", macaroon_obj.to_base64().unwrap(), preimage);
+
+        app.oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header("Content-Type", "application/json")
+                .header("Authorization", auth_val)
+                .body(Body::from(serde_json::to_vec(&body_val).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+    };
+
+    let session_uuid_val = uuid::Uuid::new_v4();
+    let session_uuid = session_uuid_val.to_string();
+    budget_manager
+        .open_session(
+            &infernos::common::types::SessionId(session_uuid_val),
+            infernos::common::types::Satoshis(100),
+        )
+        .await;
+
+    // 1. Missing capability rejected
+    let macaroon_missing = macaroon_service
+        .mint(
+            &known_payment_hash,
+            vec![
+                infernos::node::gate::macaroon::Caveat::Session(session_uuid.clone()),
+                infernos::node::gate::macaroon::Caveat::Budget(100),
+            ],
+        )
+        .unwrap();
+    let resp_missing = send_req(
+        macaroon_missing,
+        app.clone(),
+        preimage_hex.clone(),
+        chat_body.clone(),
+    )
+    .await;
+    assert_eq!(resp_missing.status(), StatusCode::FORBIDDEN);
+
+    // 2. Wrong capability rejected
+    let macaroon_wrong = macaroon_service
+        .mint(
+            &known_payment_hash,
+            vec![
+                infernos::node::gate::macaroon::Caveat::Session(session_uuid.clone()),
+                infernos::node::gate::macaroon::Caveat::Budget(100),
+                infernos::node::gate::macaroon::Caveat::Capability("compute".to_string()),
+            ],
+        )
+        .unwrap();
+    let resp_wrong = send_req(
+        macaroon_wrong,
+        app.clone(),
+        preimage_hex.clone(),
+        chat_body.clone(),
+    )
+    .await;
+    assert_eq!(resp_wrong.status(), StatusCode::FORBIDDEN);
+
+    // 3. Tampered capability rejected
+    let mut macaroon_tampered = macaroon_service
+        .mint(
+            &known_payment_hash,
+            vec![
+                infernos::node::gate::macaroon::Caveat::Session(session_uuid.clone()),
+                infernos::node::gate::macaroon::Caveat::Budget(100),
+                infernos::node::gate::macaroon::Caveat::Capability("compute".to_string()),
+            ],
+        )
+        .unwrap();
+    macaroon_tampered.caveats.pop();
+    macaroon_tampered
+        .caveats
+        .push("capability = inference".to_string());
+    let resp_tampered = send_req(
+        macaroon_tampered,
+        app.clone(),
+        preimage_hex.clone(),
+        chat_body.clone(),
+    )
+    .await;
+    assert_eq!(resp_tampered.status(), StatusCode::UNAUTHORIZED);
+
+    // 4. Capability=inference accepted
+    let macaroon_valid = macaroon_service
+        .mint(
+            &known_payment_hash,
+            vec![
+                infernos::node::gate::macaroon::Caveat::Session(session_uuid.clone()),
+                infernos::node::gate::macaroon::Caveat::Budget(100),
+                infernos::node::gate::macaroon::Caveat::Capability("inference".to_string()),
+            ],
+        )
+        .unwrap();
+    let resp_valid = send_req(
+        macaroon_valid,
+        app.clone(),
+        preimage_hex.clone(),
+        chat_body.clone(),
+    )
+    .await;
+    // Auth succeeded, fails at proxy layer
+    assert_eq!(resp_valid.status(), StatusCode::BAD_GATEWAY);
 }

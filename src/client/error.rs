@@ -8,6 +8,9 @@ pub enum ClientError {
     #[error("Budget exceeded: allocated {allocated} sats, needed {needed} sats")]
     BudgetExceeded { allocated: u64, needed: u64 },
 
+    #[error("Infernos session expired or budget exhausted")]
+    SessionExpired,
+
     #[error("HTTP request error: {0}")]
     Http(#[from] reqwest::Error),
 

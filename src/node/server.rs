@@ -18,6 +18,13 @@ impl InfernosServer {
     }
 
     pub async fn run(&self) -> Result<()> {
+        self.run_until_shutdown(std::future::pending()).await
+    }
+
+    pub async fn run_until_shutdown<F>(&self, shutdown: F) -> Result<()>
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
         let addr = format!("{}:{}", self.config.server.host, self.config.server.port);
         tracing::info!("Starting Infernos Node on {}", addr);
 
@@ -44,6 +51,7 @@ impl InfernosServer {
             .map_err(|e| crate::common::error::Error::Internal(e.to_string()))?;
 
         axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
             .await
             .map_err(|e| crate::common::error::Error::Internal(e.to_string()))?;
 

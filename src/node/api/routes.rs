@@ -11,5 +11,6 @@ pub fn create_routes(state: AppState) -> Router {
         .route("/v1/models", get(handlers::models))
         .route("/v1/session/new", post(handlers::new_session))
         .route("/v1/chat/completions", post(handlers::chat_completions))
+        .route("/internal/mock/pay", post(handlers::mock_pay))
         .with_state(state)
 }
