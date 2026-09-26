@@ -108,9 +108,7 @@ async fn test_end_to_end_client_node_integration() {
             host: "127.0.0.1".to_string(),
             port: 0,
         },
-        pricing: PricingConfig {
-            default_price_sats: Satoshis(10),
-        },
+        pricing: PricingConfig::new(Satoshis(10)),
         upstream: UpstreamConfig {
             url: upstream_mock.uri(),
         },
