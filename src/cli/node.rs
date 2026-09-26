@@ -75,14 +75,27 @@ async fn start(config_path: String) {
 
     // Create signal listener for graceful shutdown
     let shutdown_signal = async {
-        let mut sigterm =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-        let mut sigint =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
+        let ctrl_c = async {
+            let _ = tokio::signal::ctrl_c().await;
+        };
+
+        #[cfg(unix)]
+        let terminate = async {
+            if let Ok(mut sigterm) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            {
+                sigterm.recv().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
 
         tokio::select! {
-            _ = sigterm.recv() => {}
-            _ = sigint.recv() => {}
+            _ = ctrl_c => {}
+            _ = terminate => {}
         }
         println!("\nShutting down...");
     };
