@@ -26,13 +26,22 @@ default_price_sats = 10
 
 
 [lightning]
-# Lightning backend type: "mock", "lnd", or "nwc"
-# Default: "mock" (in-memory simulator for local testing)
+# Lightning backend type: "lnd", "mock", or "nwc"
+# Default: "mock" (in-memory simulator for local zero-wallet testing)
 backend = "mock"
 
-# LND Configuration (required if backend = "lnd")
-# lnd_rpc_host = "localhost:10009"
-# lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+# Bitcoin network: "testnet" (for local testing with testnet sats) or "mainnet" (for live production)
+# Options: "mainnet", "testnet", "regtest", "signet"
+network = "testnet"
+
+# LND REST Configuration (required if backend = "lnd")
+# The REST API address of your LND node (LND default REST port is 8080)
+# lnd_rest_host = "https://127.0.0.1:8080"
+# Path to your LND admin.macaroon or invoice.macaroon:
+# - For Testnet: "~/.lnd/data/chain/bitcoin/testnet/admin.macaroon"
+# - For Mainnet: "~/.lnd/data/chain/bitcoin/mainnet/admin.macaroon"
+# lnd_macaroon_path = "~/.lnd/data/chain/bitcoin/testnet/admin.macaroon"
+# Optional path to LND tls.cert:
 # lnd_tls_cert_path = "~/.lnd/tls.cert"
 
 # Nostr Wallet Connect Configuration (required if backend = "nwc")

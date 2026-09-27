@@ -78,7 +78,7 @@ Copy the example configuration:
 ```bash
 cp config/node.example.toml config/node.toml
 ```
-Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, and your Lightning backend (`mock` for local dev/testing, `lnd`, or `nwc`).
+Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, your Lightning backend (`lnd`, `mock`, or `nwc`), and target Bitcoin network (`network = "testnet"` for testing with zero-value testnet sats or `network = "mainnet"` for production sats).
 
 #### Step B: Start the Node
 ```bash
@@ -113,18 +113,18 @@ Consume inference without creating accounts or acquiring centralized API keys.
 #### Method A: Command-Line Interface (CLI)
 
 ```bash
-# Pay-per-request query
+# Query an Infernos node (defaults to --node http://127.0.0.1:8080)
 cargo run -- call \
-  --endpoint http://127.0.0.1:8080 \
-  --model llama3 \
+  --node http://127.0.0.1:8080 \
+  --model llama3.2 \
   --prompt "Explain the Lightning Network"
 
-# Autonomous query with strict Session Budget protection (e.g. 500 Sats)
+# Query with custom session budget (e.g. 500 Sats)
 cargo run -- call \
-  --endpoint http://127.0.0.1:8080 \
-  --model llama3 \
+  --node http://127.0.0.1:8080 \
+  --model llama3.2 \
   --budget 500 \
-  --prompt "Analyze this smart contract and summarize vulnerabilities"
+  --prompt "Explain Bitcoin L402 in one sentence"
 ```
 
 #### Method B: Rust SDK / Agent Integration

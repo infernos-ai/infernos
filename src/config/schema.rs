@@ -72,9 +72,22 @@ impl Default for PricingConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum BitcoinNetwork {
+    Mainnet,
+    #[default]
+    Testnet,
+    Regtest,
+    Signet,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LightningConfig {
     pub backend: LightningBackendType,
+    #[serde(default)]
+    pub network: BitcoinNetwork,
+    #[serde(alias = "lnd_rest_host")]
     pub lnd_rpc_host: Option<String>,
     pub lnd_macaroon_path: Option<String>,
     pub lnd_tls_cert_path: Option<String>,
@@ -85,6 +98,7 @@ impl Default for LightningConfig {
     fn default() -> Self {
         Self {
             backend: LightningBackendType::Mock,
+            network: BitcoinNetwork::Testnet,
             lnd_rpc_host: None,
             lnd_macaroon_path: None,
             lnd_tls_cert_path: None,

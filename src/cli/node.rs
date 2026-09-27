@@ -55,7 +55,10 @@ async fn start(config_path: String) {
         }
     };
     println!("✓ Configuration loaded from {}", config_path);
-    println!("✓ Lightning backend: mock"); // MVP assumption
+    println!(
+        "✓ Lightning backend: {:?} ({:?})",
+        config.lightning.backend, config.lightning.network
+    );
     println!("✓ Upstream: {}", config.upstream.url);
     println!(
         "✓ Server listening on {}:{}",
@@ -151,7 +154,10 @@ async fn status() {
         "Price:        {} sats/request",
         config.pricing.default_price_sats.0
     );
-    println!("Lightning:    MOCK");
+    println!(
+        "Lightning:    {:?} ({:?})",
+        config.lightning.backend, config.lightning.network
+    );
 }
 
 async fn stop() {

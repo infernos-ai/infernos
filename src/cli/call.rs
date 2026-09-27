@@ -19,14 +19,26 @@ pub struct CallArgs {
 
     #[arg(long, default_value_t = 100)]
     pub budget: u64,
+
+    /// Optional LND REST host to pay invoices automatically (e.g. https://127.0.0.1:8081)
+    #[arg(long)]
+    pub payer_lnd_host: Option<String>,
+
+    /// Optional path to payer LND admin.macaroon
+    #[arg(long)]
+    pub payer_macaroon: Option<String>,
+
+    /// Optional path to payer LND tls.cert
+    #[arg(long)]
+    pub payer_tls_cert: Option<String>,
 }
 
-struct MockPaymentProvider {
+struct InteractiveOrMockPaymentProvider {
     node_url: String,
     http_client: reqwest::Client,
 }
 
-impl MockPaymentProvider {
+impl InteractiveOrMockPaymentProvider {
     fn new(node_url: String) -> Self {
         Self {
             node_url,
@@ -36,48 +48,105 @@ impl MockPaymentProvider {
 }
 
 #[async_trait::async_trait]
-impl LightningPaymentProvider for MockPaymentProvider {
+impl LightningPaymentProvider for InteractiveOrMockPaymentProvider {
     async fn pay_invoice(&self, invoice: &str) -> Result<String, ClientError> {
         let url = format!("{}/internal/mock/pay", self.node_url.trim_end_matches('/'));
 
         let response = self
             .http_client
-            .post(url)
+            .post(&url)
             .json(&serde_json::json!({
                 "invoice": invoice
             }))
             .send()
-            .await
-            .map_err(|e| ClientError::Protocol(format!("HTTP error: {}", e)))?;
+            .await;
 
-        if !response.status().is_success() {
-            let status = response.status();
-
-            return Err(ClientError::Protocol(format!(
-                "Mock payment failed with {}",
-                status
-            )));
+        if let Ok(resp) = response {
+            if resp.status().is_success() {
+                if let Ok(body) = resp.json::<serde_json::Value>().await {
+                    if let Some(preimage) = body["preimage"].as_str() {
+                        return Ok(preimage.to_string());
+                    }
+                }
+            }
         }
 
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| ClientError::Protocol(format!("JSON error: {}", e)))?;
+        // Mock payment not supported on this node (Node is running real Lightning / Testnet / Mainnet)
+        println!("\n⚡ Lightning Payment Required (L402)");
+        println!("────────────────────────────────────────────────────────────");
+        println!("Invoice:\n{}", invoice);
+        println!("────────────────────────────────────────────────────────────");
+        println!("Please pay this invoice using your Lightning wallet (Testnet/Mainnet/LND).");
+        print!("Enter payment preimage (hex): ");
+        use std::io::{self, Write};
+        let _ = io::stdout().flush();
 
-        body["preimage"].as_str().map(str::to_owned).ok_or_else(|| {
-            ClientError::Protocol("Mock payment response missing preimage".to_string())
-        })
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).map_err(|e| {
+            ClientError::Payment(format!("Failed to read preimage from stdin: {}", e))
+        })?;
+
+        let preimage = input.trim().to_string();
+        if preimage.is_empty() {
+            return Err(ClientError::Payment(
+                "No preimage provided. Payment aborted.".to_string(),
+            ));
+        }
+
+        Ok(preimage)
     }
 }
 
 pub async fn handle_call_command(args: CallArgs) {
+    let payer_host = args
+        .payer_lnd_host
+        .clone()
+        .or_else(|| std::env::var("LND_PAYER_REST_HOST").ok());
+    let payer_macaroon = args
+        .payer_macaroon
+        .clone()
+        .or_else(|| std::env::var("LND_PAYER_MACAROON_PATH").ok());
+
+    let (provider, payment_mode): (Arc<dyn LightningPaymentProvider>, &str) = if let (
+        Some(host),
+        Some(macaroon),
+    ) =
+        (payer_host, payer_macaroon)
+    {
+        let cfg = crate::config::schema::LightningConfig {
+            backend: crate::config::schema::LightningBackendType::Lnd,
+            network: crate::config::schema::BitcoinNetwork::Testnet,
+            lnd_rpc_host: Some(host),
+            lnd_macaroon_path: Some(macaroon),
+            lnd_tls_cert_path: args
+                .payer_tls_cert
+                .clone()
+                .or_else(|| std::env::var("LND_PAYER_TLS_CERT_PATH").ok()),
+            nwc_uri: None,
+        };
+        match crate::node::lightning::lnd::LndBackend::from_config(&cfg) {
+            Ok(backend) => (Arc::new(backend), "LND (Automated)"),
+            Err(e) => {
+                eprintln!("Warning: Failed to initialize payer LND backend ({}), falling back to interactive payment.", e);
+                (
+                    Arc::new(InteractiveOrMockPaymentProvider::new(args.node.clone())),
+                    "Interactive Lightning",
+                )
+            }
+        }
+    } else {
+        (
+            Arc::new(InteractiveOrMockPaymentProvider::new(args.node.clone())),
+            "Lightning (L402)",
+        )
+    };
+
     println!("Infernos\n──────────────────────────────");
     println!("Node:      {}", args.node);
     println!("Model:     {}", args.model);
     println!("Budget:    {} sats", args.budget);
-    println!("Payment:   MOCK Lightning\n");
+    println!("Payment:   {}\n", payment_mode);
 
-    let provider = Arc::new(MockPaymentProvider::new(args.node.clone()));
     let budget_tracker = Arc::new(ClientBudgetTracker::new(args.budget));
 
     let client = match InfernosClient::builder()
