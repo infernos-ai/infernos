@@ -1,3 +1,4 @@
+
 # Infernos Node Operator Guide
 
 This guide walks operators through turning a machine with local open-weight models into a self-sovereign inference endpoint that earns Satoshis over the Lightning Network.
@@ -80,7 +81,7 @@ network = "testnet"
 
 Infernos communicates directly with LND using its built-in REST API, requiring no heavy gRPC dependencies.
 
-### Option A: Testing Locally with Bitcoin Testnet (Recommended for Initial Setup)
+### Option A: Testing Locally with Bitcoin Testnet
 Testnet allows you to test real Lightning payments and session budgeting without risking real capital.
 
 1. **Start your LND node on testnet**:

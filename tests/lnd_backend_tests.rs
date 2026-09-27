@@ -46,10 +46,9 @@ async fn test_lnd_backend_is_invoice_settled() {
 
     let hash_bytes = [9u8; 32];
     let hash_hex = hex::encode(hash_bytes);
-    let hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash_bytes);
 
     Mock::given(method("GET"))
-        .and(path(format!("/v1/invoice/{}", hash_b64url)))
+        .and(path(format!("/v1/invoice/{}", hash_hex)))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "settled": true,
             "state": "SETTLED"
@@ -118,7 +117,6 @@ async fn test_lnd_backend_testnet_flow() {
     let hash_bytes = [11u8; 32];
     let hash_b64 = base64::engine::general_purpose::STANDARD.encode(hash_bytes);
     let hash_hex = hex::encode(hash_bytes);
-    let hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash_bytes);
     // Standard testnet invoice prefix: lntb
     let testnet_invoice = "lntb10u1pvjql8zpp5...";
 
@@ -135,7 +133,7 @@ async fn test_lnd_backend_testnet_flow() {
 
     // 2. Mock invoice lookup on Testnet LND
     Mock::given(method("GET"))
-        .and(path(format!("/v1/invoice/{}", hash_b64url)))
+        .and(path(format!("/v1/invoice/{}", hash_hex)))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "settled": true,
             "state": "SETTLED"
@@ -169,7 +167,6 @@ async fn test_lnd_backend_mainnet_flow() {
     let hash_bytes = [22u8; 32];
     let hash_b64 = base64::engine::general_purpose::STANDARD.encode(hash_bytes);
     let hash_hex = hex::encode(hash_bytes);
-    let hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(hash_bytes);
     // Standard mainnet invoice prefix: lnbc
     let mainnet_invoice = "lnbc10u1pvjql8zpp5...";
 
@@ -186,7 +183,7 @@ async fn test_lnd_backend_mainnet_flow() {
 
     // 2. Mock invoice lookup on Mainnet LND
     Mock::given(method("GET"))
-        .and(path(format!("/v1/invoice/{}", hash_b64url)))
+        .and(path(format!("/v1/invoice/{}", hash_hex)))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "settled": true,
             "state": "SETTLED"
@@ -211,4 +208,41 @@ async fn test_lnd_backend_mainnet_flow() {
         .await
         .expect("Failed to check mainnet settlement");
     assert!(is_settled);
+}
+
+#[tokio::test]
+async fn test_live_lnd_if_configured() {
+    let rest_host = std::env::var("LND_TEST_REST_HOST").ok();
+    let macaroon_path = std::env::var("LND_TEST_MACAROON_PATH").ok();
+    let cert_path = std::env::var("LND_TEST_TLS_CERT_PATH").ok();
+
+    if let (Some(host), Some(macaroon)) = (rest_host, macaroon_path) {
+        println!("Live LND environment detected at {host}! Running live integration test...");
+
+        let config = LightningConfig {
+            backend: LightningBackendType::Lnd,
+            network: BitcoinNetwork::Testnet,
+            lnd_rpc_host: Some(host),
+            lnd_macaroon_path: Some(macaroon),
+            lnd_tls_cert_path: cert_path,
+            nwc_uri: None,
+        };
+
+        let backend =
+            LndBackend::from_config(&config).expect("Failed to initialize LndBackend from config");
+
+        let invoice = backend
+            .create_invoice(Satoshis(10), "Infernos Integration Test")
+            .await
+            .expect("Failed to create live invoice");
+
+        assert!(!invoice.bolt11.is_empty());
+        assert_eq!(invoice.payment_hash.0.len(), 64);
+
+        let is_settled = backend
+            .is_invoice_settled(&invoice.payment_hash)
+            .await
+            .expect("Failed to query live invoice settlement");
+        assert!(!is_settled);
+    }
 }

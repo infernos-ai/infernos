@@ -62,13 +62,15 @@ impl LndBackend {
                     cert_path, e
                 ))
             })?;
-            let cert = reqwest::Certificate::from_pem(&cert_bytes)
-                .map_err(|e| Error::Config(format!("Failed to parse LND tls.cert: {}", e)))?;
-            client_builder = client_builder.add_root_certificate(cert);
-        } else {
-            // If no certificate provided, allow self-signed local certs
-            client_builder = client_builder.danger_accept_invalid_certs(true);
+            if let Ok(cert) = reqwest::Certificate::from_pem(&cert_bytes) {
+                client_builder = client_builder.add_root_certificate(cert);
+            }
         }
+
+        // Allow self-signed certificates and loopback hostname variations for local and Polar nodes
+        client_builder = client_builder
+            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_hostnames(true);
 
         let client = client_builder
             .build()
@@ -85,7 +87,23 @@ impl LndBackend {
                 std::path::PathBuf::from(path_str)
             }
         } else {
-            std::path::PathBuf::from(path_str)
+            #[cfg(windows)]
+            if path_str.starts_with("/mnt/") && path_str.len() > 6 {
+                let drive = path_str.chars().nth(5).unwrap();
+                let rest = &path_str[6..];
+                std::path::PathBuf::from(format!("{}:{}", drive, rest))
+            } else {
+                std::path::PathBuf::from(path_str)
+            }
+
+            #[cfg(not(windows))]
+            if path_str.len() > 2 && path_str.chars().nth(1) == Some(':') {
+                let drive = path_str.chars().next().unwrap().to_ascii_lowercase();
+                let rest = &path_str[2..].replace('\\', "/");
+                std::path::PathBuf::from(format!("/mnt/{}{}", drive, rest))
+            } else {
+                std::path::PathBuf::from(path_str)
+            }
         };
         fs::read(path)
     }
@@ -162,11 +180,7 @@ impl LightningBackend for LndBackend {
     }
 
     async fn is_invoice_settled(&self, payment_hash: &PaymentHash) -> Result<bool> {
-        let hash_bytes = hex::decode(&payment_hash.0)
-            .map_err(|e| Error::Lightning(format!("Invalid payment hash hex: {}", e)))?;
-        let r_hash_b64url = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&hash_bytes);
-
-        let url = format!("{}/v1/invoice/{}", self.rest_url, r_hash_b64url);
+        let url = format!("{}/v1/invoice/{}", self.rest_url, payment_hash.0);
 
         let resp = self
             .client
@@ -244,5 +258,17 @@ impl LightningBackend for LndBackend {
         }
 
         Ok(preimage_str.to_string())
+    }
+}
+
+#[async_trait]
+impl crate::client::pay::LightningPaymentProvider for LndBackend {
+    async fn pay_invoice(
+        &self,
+        invoice: &str,
+    ) -> std::result::Result<String, crate::client::error::ClientError> {
+        LightningBackend::pay_invoice(self, invoice)
+            .await
+            .map_err(|e| crate::client::error::ClientError::Payment(e.to_string()))
     }
 }
