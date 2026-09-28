@@ -3,7 +3,10 @@ use crate::config::schema::NodeConfig;
 use crate::node::api::routes::create_routes;
 use crate::node::api::AppState;
 use crate::node::gate::{MacaroonService, SessionBudgetManager};
-use crate::node::lightning::backend::MockLightningBackend;
+use crate::node::lightning::mock::MockLightningBackend;
+use crate::node::lightning::nwc::NwcLightningBackend;
+use crate::node::lightning::LightningBackend;
+use crate::config::schema::LightningBackendType;
 use crate::node::proxy::openai::OpenAiProxy;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
@@ -65,13 +68,26 @@ impl InfernosServer {
 
         let proxy = OpenAiProxy::new(self.config.upstream.url.clone());
 
+        let lightning_backend: Arc<dyn LightningBackend> = match self.config.lightning.backend {
+            LightningBackendType::Mock => Arc::new(MockLightningBackend::new()),
+            LightningBackendType::Nwc => {
+                let uri = std::env::var("INFERNOS_NWC_URI")
+                    .or_else(|_| self.config.lightning.nwc_uri.clone().ok_or("Missing INFERNOS_NWC_URI".to_string()))
+                    .map_err(|e| crate::common::error::Error::Config(format!("NWC configuration error: {}", e)))?;
+                Arc::new(NwcLightningBackend::new(uri)?)
+            },
+            LightningBackendType::Lnd => {
+                return Err(crate::common::error::Error::Config("LND backend not yet implemented".to_string()));
+            }
+        };
+
         let state = AppState {
             config: Arc::new(self.config.clone()),
-            // Using MockLightningBackend by default to keep the implementation simple right now
-            lightning: Arc::new(MockLightningBackend::new()),
+            lightning: lightning_backend,
             budget_manager: Arc::new(SessionBudgetManager::new()),
             macaroon_service: Arc::new(MacaroonService::new(macaroon_key, "infernos-node")),
             proxy,
+            stats: Arc::new(crate::node::api::NodeStats::default()),
         };
 
         let app = create_routes(state).layer(

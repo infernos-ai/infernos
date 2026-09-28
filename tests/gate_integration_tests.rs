@@ -3,7 +3,8 @@ use infernos::node::gate::budget::{SessionBudgetManager, HEADER_REMAINING_BUDGET
 use infernos::node::gate::challenge::L402Challenge;
 use infernos::node::gate::macaroon::{Caveat, MacaroonService};
 use infernos::node::gate::verify::L402Verifier;
-use infernos::node::lightning::backend::{LightningBackend, MockLightningBackend};
+use infernos::node::lightning::backend::LightningBackend;
+use infernos::node::lightning::mock::MockLightningBackend;
 use uuid::Uuid;
 
 #[tokio::test]

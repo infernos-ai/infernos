@@ -1,5 +1,6 @@
 use infernos::common::types::Satoshis;
-use infernos::node::lightning::backend::{LightningBackend, MockLightningBackend};
+use infernos::node::lightning::backend::LightningBackend;
+use infernos::node::lightning::mock::MockLightningBackend;
 
 #[tokio::test]
 async fn test_mock_backend_create_and_settle() {

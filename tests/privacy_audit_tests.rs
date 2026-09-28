@@ -6,7 +6,7 @@ use infernos::config::schema::{NodeConfig, PricingConfig};
 use infernos::node::api::routes::create_routes;
 use infernos::node::api::AppState;
 use infernos::node::gate::{MacaroonService, SessionBudgetManager};
-use infernos::node::lightning::backend::MockLightningBackend;
+use infernos::node::lightning::mock::MockLightningBackend;
 use infernos::node::proxy::openai::OpenAiProxy;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -60,6 +60,7 @@ fn setup_app() -> axum::Router {
             "infernos-node",
         )),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     create_routes(state).layer(
