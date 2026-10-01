@@ -86,3 +86,20 @@ When the Infernos Gate receives the `Authorization` header, it verifies four cri
 - **Non-Forgeable**: Macaroons cannot be crafted or tampered with without knowledge of the 32-byte root secret.
 - **Replay Protection**: Each invoice payment hash is unique.
 - **Stateless Verification**: For direct pay-per-request calls, the gate does not require a database to verify token authenticity.
+
+---
+
+## 6. Lightning Backends & Network Support
+
+Infernos supports multiple Lightning backend implementations and Bitcoin networks:
+
+### Supported Backends
+1. **LND REST (`lnd`)**: Connects directly to an LND node's HTTPS REST API for invoice creation, settlement verification, and automated caller payments. Requires no heavy gRPC dependencies.
+2. **Mock Backend (`mock`)**: In-memory payment simulation for testing and zero-wallet offline development.
+3. **Nostr Wallet Connect (`nwc`)**: Connects via NWC protocol for remote wallet integration.
+
+### Bitcoin Network Modes
+- **Testnet (`testnet`)**: Ideal for testing locally or staging environments. Uses testnet satoshis with zero financial risk. BOLT-11 invoices start with `lntb`.
+- **Mainnet (`mainnet`)**: For production deployment. Earns real Bitcoin satoshis for GPU inference. BOLT-11 invoices start with `lnbc`.
+- **Regtest / Signet (`regtest`, `signet`)**: Supported for custom local Bitcoin development networks.
+

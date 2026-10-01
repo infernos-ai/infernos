@@ -84,6 +84,33 @@ impl InfernosServer {
         let state = AppState {
             config: Arc::new(self.config.clone()),
             lightning: lightning_backend,
+        let lightning: Arc<dyn crate::node::lightning::LightningBackend> =
+            match self.config.lightning.backend {
+                crate::config::schema::LightningBackendType::Mock => {
+                    tracing::info!("Initializing Mock Lightning backend");
+                    Arc::new(MockLightningBackend::new())
+                }
+                crate::config::schema::LightningBackendType::Lnd => {
+                    tracing::info!(
+                        "Connecting to LND REST backend on {} ({:?})",
+                        self.config.lightning.lnd_rpc_host.as_deref().unwrap_or(""),
+                        self.config.lightning.network
+                    );
+                    let backend =
+                        crate::node::lightning::LndBackend::from_config(&self.config.lightning)?;
+                    Arc::new(backend)
+                }
+                crate::config::schema::LightningBackendType::Nwc => {
+                    return Err(crate::common::error::Error::Config(
+                    "Nostr Wallet Connect (NWC) backend is not yet supported. Use 'lnd' or 'mock'."
+                        .to_string(),
+                ));
+                }
+            };
+
+        let state = AppState {
+            config: Arc::new(self.config.clone()),
+            lightning,
             budget_manager: Arc::new(SessionBudgetManager::new()),
             macaroon_service: Arc::new(MacaroonService::new(macaroon_key, "infernos-node")),
             proxy,

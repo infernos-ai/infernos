@@ -78,7 +78,7 @@ Copy the example configuration:
 ```bash
 cp config/node.example.toml config/node.toml
 ```
-Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, and your Lightning backend (`mock` for local dev/testing, `lnd`, or `nwc`).
+Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, your Lightning backend (`lnd`, `mock`, or `nwc`), and target Bitcoin network (`network = "testnet"` for testing with zero-value testnet sats or `network = "mainnet"` for production sats).
 
 #### Step B: Start the Node
 ```bash
