@@ -103,6 +103,7 @@ pub async fn chat_completions(
         .map(|v| v as usize);
     let cost = state
         .pricing_calculator()
+        .await
         .calculate_cost(prompt_tokens, max_completion_tokens);
     let req_model = payload.get("model").and_then(|m| m.as_str());
 
@@ -245,13 +246,29 @@ pub async fn node_stats(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 pub async fn node_config(State(state): State<AppState>) -> impl IntoResponse {
+    let pricing = state.live_pricing.read().await.clone();
     Json(json!({
         "pricing": {
-            "default_price_sats": state.config.pricing.default_price_sats
+            "default_price_sats": pricing.default_price_sats,
+            "sats_per_prompt_token": pricing.sats_per_prompt_token,
+            "sats_per_completion_token": pricing.sats_per_completion_token,
         },
         "upstream": {
             "url": state.config.upstream.url
         }
+    }))
+}
+
+pub async fn update_node_config(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::config::schema::PricingConfig>,
+) -> impl IntoResponse {
+    let mut pricing = state.live_pricing.write().await;
+    *pricing = payload.clone();
+    
+    Json(json!({
+        "status": "success",
+        "pricing": payload
     }))
 }
 

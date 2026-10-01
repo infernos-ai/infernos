@@ -120,7 +120,11 @@ impl LightningBackend for MockLightningBackend {
     }
 
     async fn is_invoice_settled(&self, payment_hash: &PaymentHash) -> Result<bool> {
-        // Auto-settle to bypass polling delays during the demo
-        Ok(true)
+        let invoices = self.invoices.lock().await;
+        if let Some(state) = invoices.get(&payment_hash.0) {
+            Ok(state.settled)
+        } else {
+            Ok(false)
+        }
     }
 }

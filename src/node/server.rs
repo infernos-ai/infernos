@@ -83,6 +83,7 @@ impl InfernosServer {
 
         let state = AppState {
             config: Arc::new(self.config.clone()),
+            live_pricing: Arc::new(tokio::sync::RwLock::new(self.config.pricing.clone())),
             lightning: lightning_backend,
         let lightning: Arc<dyn crate::node::lightning::LightningBackend> =
             match self.config.lightning.backend {

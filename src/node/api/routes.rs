@@ -12,7 +12,7 @@ pub fn create_routes(state: AppState) -> Router {
         .route("/v1/session/new", post(handlers::new_session))
         .route("/v1/chat/completions", post(handlers::chat_completions))
         .route("/v1/node/stats", get(handlers::node_stats))
-        .route("/v1/node/config", get(handlers::node_config))
+        .route("/v1/node/config", get(handlers::node_config).post(handlers::update_node_config))
         .route("/internal/mock/pay", post(handlers::mock_pay))
         .with_state(state)
 }

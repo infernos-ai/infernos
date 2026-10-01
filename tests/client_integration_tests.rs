@@ -118,7 +118,8 @@ async fn test_end_to_end_client_node_integration() {
     };
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: Arc::new(node_lightning.clone()),
         budget_manager: Arc::new(SessionBudgetManager::new()),
         macaroon_service: Arc::new(MacaroonService::new(
