@@ -216,7 +216,13 @@ impl LightningBackend for LndBackend {
         Ok(is_settled)
     }
 
-    async fn pay_invoice(&self, invoice: &str) -> Result<String> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl LndBackend {
+    pub async fn pay_invoice(&self, invoice: &str) -> Result<String> {
         let url = format!("{}/v1/channels/transactions", self.rest_url);
         let payload = json!({
             "payment_request": invoice
@@ -267,7 +273,7 @@ impl crate::client::pay::LightningPaymentProvider for LndBackend {
         &self,
         invoice: &str,
     ) -> std::result::Result<String, crate::client::error::ClientError> {
-        LightningBackend::pay_invoice(self, invoice)
+        LndBackend::pay_invoice(self, invoice)
             .await
             .map_err(|e| crate::client::error::ClientError::Payment(e.to_string()))
     }

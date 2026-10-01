@@ -133,7 +133,7 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
                   <div className="pl-7 pr-2">
                     <div className="flex flex-col p-2 bg-background border border-border/50 rounded-md">
                       <span className="text-[9px] text-muted-foreground uppercase tracking-widest mb-1">Preimage (Proof of Payment)</span>
-                      <span className="font-mono text-[10px] text-success break-all">mock_preimage_for_cli_demo</span>
+                      <span className="font-mono text-[10px] text-success break-all">{sessionData.preimage}</span>
                     </div>
                   </div>
                 )}

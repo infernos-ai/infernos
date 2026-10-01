@@ -122,15 +122,15 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
                   </Button>
                 </div>
               ) : (
-                /* Demo Mode UI */
+                /* Testnet/Mock Mode UI */
                 <div className="rounded-xl border-2 border-muted bg-card p-5 shadow-sm border-dashed">
                   <div className="flex items-center gap-2 mb-4 text-muted-foreground font-bold tracking-wider">
                     <div className="w-3 h-3 border-2 border-currentColor rotate-45" />
-                    DEMO MODE
+                    LOCAL TESTNET
                   </div>
                   
                   <div className="mb-6 text-sm text-muted-foreground">
-                    Mock Lightning — no real sats
+                    Mock Lightning Environment
                   </div>
                   
                   <div className="flex items-center justify-between mb-2">

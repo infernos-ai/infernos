@@ -86,14 +86,7 @@ export default function PlaygroundPage() {
       setSessionStatus("active");
     } catch (err: any) {
       console.error("WebLN Payment failed:", err);
-      // Hackathon Demo Bypass: If the wallet fails for ANY reason (0 funds, user closed window, etc)
-      // we inject the mock preimage so the judges can experience the UI flow seamlessly.
-      console.log("Mocking successful payment for hackathon demo!");
-      setSessionData((prev) => ({
-        ...prev,
-        preimage: "0000000000000000000000000000000000000000000000000000000000000000"
-      }));
-      setSessionStatus("active");
+      setSessionStatus("error");
     }
   };
 

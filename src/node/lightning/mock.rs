@@ -80,35 +80,21 @@ impl LightningBackend for MockLightningBackend {
     }
 
     async fn create_invoice(&self, amount_sats: Satoshis, _memo: &str) -> Result<Invoice> {
-        let millisats = amount_sats.0 * 1000;
+        let mut key = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut key);
+        let preimage_str = hex::encode(key);
         
-        // Hackathon magic: Fetch a REAL lightning invoice via LNURL so Alby extension accepts it perfectly
-        let client = reqwest::Client::new();
-        let lnurl_res = client.get("https://getalby.com/.well-known/lnurlp/hello")
-            .send()
-            .await.map_err(|e| Error::Lightning(e.to_string()))?
-            .json::<serde_json::Value>()
-            .await.map_err(|e| Error::Lightning(e.to_string()))?;
-            
-        let callback = lnurl_res["callback"].as_str().unwrap();
-        
-        let invoice_res = client.get(format!("{}?amount={}", callback, millisats))
-            .send()
-            .await.map_err(|e| Error::Lightning(e.to_string()))?
-            .json::<serde_json::Value>()
-            .await.map_err(|e| Error::Lightning(e.to_string()))?;
-            
-        let invoice_str = invoice_res["pr"].as_str().unwrap().to_string();
-
-        let preimage_str = "0000000000000000000000000000000000000000000000000000000000000000".to_string();
-        let payment_hash_str = "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925".to_string();
+        let mut hasher = Sha256::new();
+        hasher.update(&key);
+        let payment_hash_str = hex::encode(hasher.finalize());
+        let invoice_str = format!("lnbc{}mock{}", amount_sats.0, payment_hash_str);
 
         let mut lock = self.invoices.lock().await;
         lock.insert(
             payment_hash_str.clone(),
             MockInvoiceState {
                 preimage: preimage_str,
-                settled: true, // Auto-settle so the UI activates automatically
+                settled: false,
             },
         );
 
