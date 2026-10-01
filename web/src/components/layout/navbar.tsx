@@ -1,9 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Zap } from "lucide-react";
-import { Button as ConnectButton } from "@getalby/bitcoin-connect-react";
 import { Button } from "@/components/ui/button";
+
+const ConnectButton = dynamic(
+  () => import("@getalby/bitcoin-connect-react").then((mod) => mod.Button),
+  { ssr: false }
+);
 
 export function Navbar() {
   return (

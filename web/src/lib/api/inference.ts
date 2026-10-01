@@ -4,7 +4,8 @@ export async function streamChatCompletion(
   request: ChatCompletionRequest,
   macaroon: string,
   preimage: string,
-  onChunk: (text: string) => void
+  onChunk: (text: string) => void,
+  onChargedSats?: (sats: number) => void
 ): Promise<void> {
   const res = await fetch("/v1/chat/completions", {
     method: "POST",
@@ -17,6 +18,11 @@ export async function streamChatCompletion(
 
   if (!res.ok) {
     throw new Error(`API Error: ${res.status}`);
+  }
+
+  const charged = res.headers.get("x-infernos-charged-sats");
+  if (charged && onChargedSats) {
+    onChargedSats(parseInt(charged, 10));
   }
 
   if (!res.body) throw new Error("No response body");

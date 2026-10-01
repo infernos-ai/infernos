@@ -19,7 +19,7 @@ interface ChatPanelProps {
 
 export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, onPayInvoice, onSendMessage }: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const isInputDisabled = sessionStatus === "idle" || sessionStatus === "creating" || sessionStatus === "payment_required" || sessionStatus === "authorizing" || isStreaming;
+  const isInputDisabled = sessionStatus === "idle" || sessionStatus === "creating" || sessionStatus === "payment_required" || sessionStatus === "authorizing" || sessionStatus === "error" || isStreaming;
 
   const handleSend = () => {
     if (!input.trim() || isInputDisabled) return;
@@ -62,38 +62,96 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
               <p className="text-sm text-muted-foreground max-w-sm">Create a session in the Protocol Activity panel to begin permissionless inference.</p>
             </div>
           </div>
+        ) : sessionStatus === "error" ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center opacity-80 space-y-4">
+            <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center">
+              <span className="text-destructive font-bold text-xl">!</span>
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-medium text-destructive">Connection Error</h3>
+              <p className="text-sm text-muted-foreground max-w-sm">Failed to connect to the Infernos node. Is the Rust backend running?</p>
+            </div>
+          </div>
         ) : sessionStatus === "payment_required" || sessionStatus === "authorizing" ? (
           <div className="flex items-start gap-4 max-w-3xl mx-auto w-full">
-            <div className="w-8 h-8 rounded-full bg-lightning/20 flex items-center justify-center shrink-0">
-              <Zap className="w-4 h-4 text-lightning" />
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+              sessionData.invoice && !String(sessionData.invoice).includes("mock")
+                ? "bg-lightning/20"
+                : "bg-muted"
+            }`}>
+              {sessionData.invoice && !String(sessionData.invoice).includes("mock") ? (
+                <Zap className="w-4 h-4 text-lightning" />
+              ) : (
+                <div className="w-3 h-3 border-2 border-muted-foreground rotate-45" />
+              )}
             </div>
             <div className="flex flex-col gap-3 mt-1 w-full max-w-md">
               <span className="font-medium text-sm">Payment Required</span>
-              <div className="rounded-xl border border-lightning/30 bg-card p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-sm text-muted-foreground uppercase tracking-wider">Inference</span>
-                  <span className="text-sm font-medium">{sessionData.model || "llama3.2"}</span>
-                </div>
-                <div className="flex items-center justify-between mb-6">
-                  <span className="text-sm text-muted-foreground uppercase tracking-wider">Amount</span>
-                  <SatsAmount amount={sessionData.budget_sats} />
-                </div>
-                
-                <div className="flex flex-col gap-2 mb-6">
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Lightning Invoice</span>
-                  <div className="p-3 bg-background border border-border rounded-lg text-xs font-mono text-muted-foreground break-all max-h-24 overflow-y-auto">
-                    {sessionData.invoice}
+              
+              {sessionData.invoice && !String(sessionData.invoice).includes("mock") ? (
+                /* Real Mode UI */
+                <div className="rounded-xl border-2 border-lightning bg-card p-5 shadow-[0_0_15px_rgba(245,166,35,0.1)]">
+                  <div className="flex items-center gap-2 mb-4 text-lightning font-bold tracking-wider">
+                    <Zap className="w-4 h-4" fill="currentColor" />
+                    REAL LIGHTNING
                   </div>
-                </div>
+                  
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Session</span>
+                    <SatsAmount amount={sessionData.budget_sats} />
+                  </div>
+                  
+                  <div className="flex items-center justify-between mb-6">
+                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Model</span>
+                    <span className="text-sm font-medium">{sessionData.model || "llama3.2"}</span>
+                  </div>
 
-                <Button 
-                  className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-medium"
-                  onClick={onPayInvoice}
-                  disabled={sessionStatus === "authorizing"}
-                >
-                  {sessionStatus === "authorizing" ? "Authorizing..." : `Pay ${sessionData.budget_sats} sats`}
-                </Button>
-              </div>
+                  <div className="flex flex-col gap-2 mb-6">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Lightning Invoice</span>
+                    <div className="p-3 bg-background border border-border rounded-lg text-xs font-mono text-muted-foreground break-all max-h-24 overflow-y-auto">
+                      {sessionData.invoice}
+                    </div>
+                  </div>
+
+                  <Button 
+                    className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-bold"
+                    onClick={onPayInvoice}
+                    disabled={sessionStatus === "authorizing"}
+                  >
+                    {sessionStatus === "authorizing" ? "Authorizing..." : `Pay & Run`}
+                  </Button>
+                </div>
+              ) : (
+                /* Demo Mode UI */
+                <div className="rounded-xl border-2 border-muted bg-card p-5 shadow-sm border-dashed">
+                  <div className="flex items-center gap-2 mb-4 text-muted-foreground font-bold tracking-wider">
+                    <div className="w-3 h-3 border-2 border-currentColor rotate-45" />
+                    DEMO MODE
+                  </div>
+                  
+                  <div className="mb-6 text-sm text-muted-foreground">
+                    Mock Lightning — no real sats
+                  </div>
+                  
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Session</span>
+                    <span className="text-sm font-medium">{sessionData.budget_sats} mock sats</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between mb-6">
+                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Model</span>
+                    <span className="text-sm font-medium">{sessionData.model || "llama3.2"}</span>
+                  </div>
+
+                  <Button 
+                    className="w-full bg-muted text-muted-foreground hover:bg-muted/80 font-bold border border-border"
+                    onClick={onPayInvoice}
+                    disabled={sessionStatus === "authorizing"}
+                  >
+                    {sessionStatus === "authorizing" ? "Simulating..." : `Pay & Run`}
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         ) : (

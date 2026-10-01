@@ -42,14 +42,18 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
               <StatusBadge variant="warning">402 Pending</StatusBadge>
             ) : sessionStatus === "creating" ? (
               <StatusBadge variant="default">Creating...</StatusBadge>
+            ) : sessionStatus === "error" ? (
+              <StatusBadge variant="error">Error</StatusBadge>
             ) : (
               <StatusBadge variant="default">Idle</StatusBadge>
             )}
           </div>
           
-          {sessionStatus === "idle" || sessionStatus === "creating" ? (
+          {sessionStatus === "idle" || sessionStatus === "creating" || sessionStatus === "error" ? (
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">No active session. Create a session to begin inference.</p>
+              <p className="text-sm text-muted-foreground">
+                {sessionStatus === "error" ? "Connection failed. Make sure the Rust node is running." : "No active session. Create a session to begin inference."}
+              </p>
               <div className="flex justify-between items-end pb-2">
                 <SatsAmount amount={sessionData.budget_sats} label="Budget" />
               </div>
@@ -57,8 +61,9 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
                 onClick={onStartSession} 
                 className="w-full" 
                 disabled={sessionStatus === "creating"}
+                variant={sessionStatus === "error" ? "destructive" : "default"}
               >
-                {sessionStatus === "creating" ? "Creating..." : "Create Session"}
+                {sessionStatus === "creating" ? "Creating..." : sessionStatus === "error" ? "Retry" : "Create Session"}
               </Button>
             </div>
           ) : (
