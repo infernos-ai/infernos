@@ -127,8 +127,24 @@ impl OpenAiProxy {
 
     pub async fn stream_chat_completion(
         &self,
-        request: Value,
+        mut request: Value,
     ) -> Result<impl Stream<Item = Result<bytes::Bytes>>> {
+        // --- HACKATHON RAG PROOF OF CONCEPT ---
+        // In a real RAG system, we would take the user's prompt, query a Vector Database or Web Search API,
+        // and inject the results here before proxying to the LLM. 
+        // For this demo, we statically inject knowledge about Bitshala if they are mentioned!
+        if let Some(messages) = request.get_mut("messages").and_then(|m| m.as_array_mut()) {
+            if let Some(last_message) = messages.last_mut() {
+                if let Some(content) = last_message.get("content").and_then(|c| c.as_str()) {
+                    if content.to_lowercase().contains("bitshala") {
+                        let rag_context = "\n\n[SYSTEM RETRIEVAL CONTEXT: Bitshala is a highly respected Bitcoin educational organization in India. They focus on training and grooming top-tier Bitcoin and Lightning developers. They are currently hosting the 'Boss Battle' Bitcoin Hackathon.]";
+                        let new_content = format!("{}{}", content, rag_context);
+                        last_message["content"] = serde_json::Value::String(new_content);
+                    }
+                }
+            }
+        }
+        // ---------------------------------------
         let url = format!("{}/v1/chat/completions", self.upstream_url);
 
         let resp = self
