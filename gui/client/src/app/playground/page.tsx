@@ -41,53 +41,28 @@ export default function PlaygroundPage() {
 
   const handlePayInvoice = async () => {
     setSessionStatus("authorizing");
-    
     try {
       const invoiceStr = sessionData.invoice as string;
-      
-      // If the backend generated a mock invoice, bypass WebLN and simulate the payment
-      if (invoiceStr.includes("mock")) {
-        console.warn("Mock invoice detected. Simulating payment via internal API...");
-        
-        const res = await fetch("/internal/mock/pay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ invoice: invoiceStr }),
-        });
-
-        if (!res.ok) {
-          throw new Error("Failed to pay mock invoice");
-        }
-
-        const data = await res.json();
-        
-        setSessionData((prev) => ({
-          ...prev,
-          preimage: data.preimage
-        }));
-        
-        setSessionStatus("active");
-        return;
-      }
-
-      // 1. requestProvider securely grabs the connected WebLN instance (or prompts connection)
       const { requestProvider } = await import('@getalby/bitcoin-connect');
       const webln = await requestProvider();
-      
-      // 2. Prompt the user to pay the REAL L402 invoice!
       const paymentResponse = await webln.sendPayment(invoiceStr);
-      
-      // 3. Save the preimage to the session data so we can use it in the headers
       setSessionData((prev) => ({
         ...prev,
         preimage: paymentResponse.preimage
       }));
-
       setSessionStatus("active");
     } catch (err: any) {
       console.error("WebLN Payment failed:", err);
-      setSessionStatus("error");
+      setSessionStatus("payment_required");
     }
+  };
+
+  const handleManualPreimage = (preimage: string) => {
+    setSessionData((prev) => ({
+      ...prev,
+      preimage
+    }));
+    setSessionStatus("active");
   };
 
   const handleSendMessage = async (content: string) => {
@@ -154,6 +129,7 @@ export default function PlaygroundPage() {
             messages={messages}
             isStreaming={isStreaming}
             onPayInvoice={handlePayInvoice}
+            onManualPreimage={handleManualPreimage}
             onSendMessage={handleSendMessage}
           />
         </section>

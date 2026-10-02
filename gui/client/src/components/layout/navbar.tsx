@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Zap } from "lucide-react";
@@ -11,6 +12,8 @@ const ConnectButton = dynamic(
 );
 
 export function Navbar() {
+  const [network, setNetwork] = useState<"regtest" | "testnet" | "mainnet">("regtest");
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -28,7 +31,35 @@ export function Navbar() {
           <Link href="https://github.com/infernos-ai/infernos" target="_blank" className="hover:text-foreground transition-colors">GitHub</Link>
         </nav>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Bitcoin Network Indicator & Selector */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border/60 bg-card text-xs font-mono shadow-sm">
+            <div
+              className={`w-2 h-2 rounded-full ${
+                network === "mainnet"
+                  ? "bg-lightning"
+                  : network === "testnet"
+                  ? "bg-primary"
+                  : "bg-success"
+              }`}
+            />
+            <select
+              value={network}
+              onChange={(e) => setNetwork(e.target.value as "regtest" | "testnet" | "mainnet")}
+              className="bg-transparent text-xs font-mono font-medium focus:outline-none cursor-pointer text-muted-foreground hover:text-foreground"
+            >
+              <option value="regtest" className="bg-popover text-popover-foreground">
+                Regtest (Polar)
+              </option>
+              <option value="testnet" className="bg-popover text-popover-foreground">
+                Testnet / Signet
+              </option>
+              <option value="mainnet" className="bg-popover text-popover-foreground">
+                Bitcoin Mainnet
+              </option>
+            </select>
+          </div>
+
           <ConnectButton />
           
           <Link href="/playground">

@@ -14,12 +14,31 @@ interface ChatPanelProps {
   messages: Message[];
   isStreaming: boolean;
   onPayInvoice: () => void;
+  onManualPreimage?: (preimage: string) => void;
   onSendMessage: (content: string) => void;
 }
 
-export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, onPayInvoice, onSendMessage }: ChatPanelProps) {
+export function ChatPanel({
+  sessionStatus,
+  sessionData,
+  messages,
+  isStreaming,
+  onPayInvoice,
+  onManualPreimage,
+  onSendMessage,
+}: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const isInputDisabled = sessionStatus === "idle" || sessionStatus === "creating" || sessionStatus === "payment_required" || sessionStatus === "authorizing" || sessionStatus === "error" || isStreaming;
+  const [manualPreimage, setManualPreimage] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [preimageError, setPreimageError] = useState<string | null>(null);
+
+  const isInputDisabled =
+    sessionStatus === "idle" ||
+    sessionStatus === "creating" ||
+    sessionStatus === "payment_required" ||
+    sessionStatus === "authorizing" ||
+    sessionStatus === "error" ||
+    isStreaming;
 
   const handleSend = () => {
     if (!input.trim() || isInputDisabled) return;
@@ -34,6 +53,39 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
     }
   };
 
+  const handleCopyInvoice = () => {
+    if (sessionData.invoice) {
+      navigator.clipboard.writeText(sessionData.invoice);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleVerifyManualPreimage = () => {
+    setPreimageError(null);
+    const cleaned = manualPreimage.trim().toLowerCase();
+    if (!cleaned) {
+      setPreimageError("Please enter a payment preimage.");
+      return;
+    }
+    if (cleaned.length !== 64 || !/^[0-9a-fA-F]{64}$/.test(cleaned)) {
+      setPreimageError("Preimage must be a 64-character hex string.");
+      return;
+    }
+    if (onManualPreimage) {
+      onManualPreimage(cleaned);
+    }
+  };
+
+  const invoiceStr = sessionData.invoice || "";
+  const networkName = invoiceStr.startsWith("lnbcrt")
+    ? "Bitcoin Regtest (Polar)"
+    : invoiceStr.startsWith("lntb")
+    ? "Bitcoin Testnet"
+    : invoiceStr.startsWith("lnbc")
+    ? "Bitcoin Mainnet"
+    : "Lightning Network";
+
   return (
     <div className="flex-1 flex flex-col h-full relative">
       {/* Chat Header */}
@@ -45,9 +97,13 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
       {/* Status Bar */}
       {sessionStatus === "active" && (
         <div className="flex items-center justify-center gap-4 py-2 border-b border-border/30 bg-card/50 text-[10px] font-mono tracking-widest uppercase text-muted-foreground">
-          <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-success" /> Session Active</span>
+          <span className="flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-success" /> Session Active
+          </span>
           <span className="text-border">|</span>
-          <span className="flex items-center gap-1 text-lightning">⚡ {sessionData.budget_sats} SATS</span>
+          <span className="flex items-center gap-1 text-lightning">
+            ⚡ {sessionData.budget_sats} SATS
+          </span>
           <span className="text-border">|</span>
           <span>Model {sessionData.model || "llama3.2"}</span>
         </div>
@@ -59,7 +115,9 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
             <Bot className="w-12 h-12 text-muted-foreground" />
             <div className="space-y-1">
               <h3 className="font-medium text-foreground">Infernos Ready</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">Create a session in the Protocol Activity panel to begin permissionless inference.</p>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Create a session in the Protocol Activity panel to begin permissionless inference.
+              </p>
             </div>
           </div>
         ) : sessionStatus === "error" ? (
@@ -69,89 +127,98 @@ export function ChatPanel({ sessionStatus, sessionData, messages, isStreaming, o
             </div>
             <div className="space-y-1">
               <h3 className="font-medium text-destructive">Connection Error</h3>
-              <p className="text-sm text-muted-foreground max-w-sm">Failed to connect to the Infernos node. Is the Rust backend running?</p>
+              <p className="text-sm text-muted-foreground max-w-sm">
+                Failed to connect to the Infernos node. Is the Rust backend running?
+              </p>
             </div>
           </div>
         ) : sessionStatus === "payment_required" || sessionStatus === "authorizing" ? (
           <div className="flex items-start gap-4 max-w-3xl mx-auto w-full">
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-              sessionData.invoice && !String(sessionData.invoice).includes("mock")
-                ? "bg-lightning/20"
-                : "bg-muted"
-            }`}>
-              {sessionData.invoice && !String(sessionData.invoice).includes("mock") ? (
-                <Zap className="w-4 h-4 text-lightning" />
-              ) : (
-                <div className="w-3 h-3 border-2 border-muted-foreground rotate-45" />
-              )}
+            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-lightning/20">
+              <Zap className="w-4 h-4 text-lightning" />
             </div>
-            <div className="flex flex-col gap-3 mt-1 w-full max-w-md">
-              <span className="font-medium text-sm">Payment Required</span>
-              
-              {sessionData.invoice && !String(sessionData.invoice).includes("mock") ? (
-                /* Real Mode UI */
-                <div className="rounded-xl border-2 border-lightning bg-card p-5 shadow-[0_0_15px_rgba(245,166,35,0.1)]">
-                  <div className="flex items-center gap-2 mb-4 text-lightning font-bold tracking-wider">
-                    <Zap className="w-4 h-4" fill="currentColor" />
-                    REAL LIGHTNING
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Session</span>
-                    <SatsAmount amount={sessionData.budget_sats} />
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-6">
-                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Model</span>
-                    <span className="text-sm font-medium">{sessionData.model || "llama3.2"}</span>
-                  </div>
+            <div className="flex flex-col gap-3 mt-1 w-full max-w-lg">
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-sm">L402 Payment Required</span>
+                <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded bg-lightning/10 text-lightning border border-lightning/20">
+                  {networkName}
+                </span>
+              </div>
 
-                  <div className="flex flex-col gap-2 mb-6">
-                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Lightning Invoice</span>
-                    <div className="p-3 bg-background border border-border rounded-lg text-xs font-mono text-muted-foreground break-all max-h-24 overflow-y-auto">
-                      {sessionData.invoice}
-                    </div>
-                  </div>
-
-                  <Button 
-                    className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-bold"
-                    onClick={onPayInvoice}
-                    disabled={sessionStatus === "authorizing"}
-                  >
-                    {sessionStatus === "authorizing" ? "Authorizing..." : `Pay & Run`}
-                  </Button>
+              {/* Real Lightning Payment Card */}
+              <div className="rounded-xl border border-border bg-card p-5 shadow-lg flex flex-col gap-4">
+                <div className="flex items-center justify-between pb-3 border-b border-border/50">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                    Session Budget
+                  </span>
+                  <SatsAmount amount={sessionData.budget_sats} />
                 </div>
-              ) : (
-                /* Testnet/Mock Mode UI */
-                <div className="rounded-xl border-2 border-muted bg-card p-5 shadow-sm border-dashed">
-                  <div className="flex items-center gap-2 mb-4 text-muted-foreground font-bold tracking-wider">
-                    <div className="w-3 h-3 border-2 border-currentColor rotate-45" />
-                    LOCAL TESTNET
-                  </div>
-                  
-                  <div className="mb-6 text-sm text-muted-foreground">
-                    Mock Lightning Environment
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Session</span>
-                    <span className="text-sm font-medium">{sessionData.budget_sats} mock sats</span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between mb-6">
-                    <span className="text-sm text-muted-foreground uppercase tracking-wider">Model</span>
-                    <span className="text-sm font-medium">{sessionData.model || "llama3.2"}</span>
-                  </div>
 
-                  <Button 
-                    className="w-full bg-muted text-muted-foreground hover:bg-muted/80 font-bold border border-border"
-                    onClick={onPayInvoice}
-                    disabled={sessionStatus === "authorizing"}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                      BOLT11 Invoice
+                    </span>
+                    <button
+                      onClick={handleCopyInvoice}
+                      className="text-xs text-lightning hover:underline font-mono"
+                    >
+                      {copied ? "✓ Copied" : "Copy Invoice"}
+                    </button>
+                  </div>
+                  <div
+                    onClick={handleCopyInvoice}
+                    className="p-3 bg-background border border-border rounded-lg text-[11px] font-mono text-muted-foreground break-all max-h-24 overflow-y-auto cursor-pointer hover:border-lightning/50 transition-colors"
+                    title="Click to copy invoice"
                   >
-                    {sessionStatus === "authorizing" ? "Simulating..." : `Pay & Run`}
-                  </Button>
+                    {sessionData.invoice}
+                  </div>
                 </div>
-              )}
+
+                <Button
+                  className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-bold py-2.5"
+                  onClick={onPayInvoice}
+                  disabled={sessionStatus === "authorizing"}
+                >
+                  {sessionStatus === "authorizing" ? "Processing WebLN..." : "Pay with WebLN"}
+                </Button>
+
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border/50" />
+                  </div>
+                  <span className="relative bg-card px-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Or external wallet
+                  </span>
+                </div>
+
+                {/* External Wallet Preimage Input (Polar LND / Zeus / Phoenix) */}
+                <div className="flex flex-col gap-2 bg-background/50 p-3 rounded-lg border border-border/50">
+                  <span className="text-[11px] text-muted-foreground">
+                    Paid via Polar LND or external wallet? Enter the payment preimage:
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="64-character hex preimage..."
+                      value={manualPreimage}
+                      onChange={(e) => setManualPreimage(e.target.value)}
+                      className="flex-1 bg-background border border-input rounded-md px-3 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-lightning"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleVerifyManualPreimage}
+                      className="text-xs font-semibold"
+                    >
+                      Unlock
+                    </Button>
+                  </div>
+                  {preimageError && (
+                    <p className="text-[11px] text-destructive">{preimageError}</p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         ) : (
