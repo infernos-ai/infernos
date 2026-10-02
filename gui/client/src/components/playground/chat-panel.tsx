@@ -6,7 +6,7 @@ import { StatusBadge } from "@/components/infernos/status-badge";
 import { SessionStatus, SessionData } from "@/types/session";
 import { SatsAmount } from "@/components/infernos/sats-amount";
 import { Message } from "@/types/inference";
-import { useState, KeyboardEvent } from "react";
+import { useState, useEffect, KeyboardEvent } from "react";
 
 interface ChatPanelProps {
   sessionStatus: SessionStatus;
@@ -14,6 +14,7 @@ interface ChatPanelProps {
   messages: Message[];
   isStreaming: boolean;
   onPayInvoice: () => void;
+  onPayWithNwc?: (nwcUri: string) => Promise<void>;
   onManualPreimage?: (preimage: string) => void;
   onSendMessage: (content: string) => void;
 }
@@ -24,13 +25,24 @@ export function ChatPanel({
   messages,
   isStreaming,
   onPayInvoice,
+  onPayWithNwc,
   onManualPreimage,
   onSendMessage,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [manualPreimage, setManualPreimage] = useState("");
+  const [nwcUri, setNwcUri] = useState("");
+  const [nwcError, setNwcError] = useState<string | null>(null);
+  const [isPayingNwc, setIsPayingNwc] = useState(false);
   const [copied, setCopied] = useState(false);
   const [preimageError, setPreimageError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("infernos_nwc_uri");
+      if (saved) setNwcUri(saved);
+    }
+  }, []);
 
   const isInputDisabled =
     sessionStatus === "idle" ||
@@ -58,6 +70,32 @@ export function ChatPanel({
       navigator.clipboard.writeText(sessionData.invoice);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleNwcSubmit = async () => {
+    setNwcError(null);
+    const cleaned = nwcUri.trim();
+    if (!cleaned) {
+      setNwcError("Please enter your Nostr Wallet Connect (NWC) pairing URI.");
+      return;
+    }
+    if (!cleaned.startsWith("nostr+walletconnect://")) {
+      setNwcError("Invalid URI. Must start with nostr+walletconnect://");
+      return;
+    }
+    if (typeof window !== "undefined") {
+      localStorage.setItem("infernos_nwc_uri", cleaned);
+    }
+    if (onPayWithNwc) {
+      try {
+        setIsPayingNwc(true);
+        await onPayWithNwc(cleaned);
+      } catch (err: any) {
+        setNwcError(err?.message || "Failed to pay invoice via NWC.");
+      } finally {
+        setIsPayingNwc(false);
+      }
     }
   };
 
@@ -178,10 +216,49 @@ export function ChatPanel({
                 <Button
                   className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-bold py-2.5"
                   onClick={onPayInvoice}
-                  disabled={sessionStatus === "authorizing"}
+                  disabled={sessionStatus === "authorizing" || isPayingNwc}
                 >
                   {sessionStatus === "authorizing" ? "Processing WebLN..." : "Pay with WebLN"}
                 </Button>
+
+                <div className="relative flex items-center justify-center my-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border/50" />
+                  </div>
+                  <span className="relative bg-card px-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Or Nostr Wallet Connect (NWC)
+                  </span>
+                </div>
+
+                {/* Direct NWC Pairing & Payment (Alby Hub, Mutiny, Umbrel) */}
+                <div className="flex flex-col gap-2 bg-background/50 p-3 rounded-lg border border-border/50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-medium text-foreground">
+                      Connect remote NWC wallet:
+                    </span>
+                    <span className="text-[10px] text-muted-foreground font-mono">NIP-47</span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="password"
+                      placeholder="nostr+walletconnect://..."
+                      value={nwcUri}
+                      onChange={(e) => setNwcUri(e.target.value)}
+                      className="flex-1 bg-background border border-input rounded-md px-3 py-1.5 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-lightning"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={handleNwcSubmit}
+                      disabled={isPayingNwc || sessionStatus === "authorizing"}
+                      className="text-xs font-semibold bg-primary hover:bg-primary/90"
+                    >
+                      {isPayingNwc ? "Paying via NWC..." : "Pay with NWC"}
+                    </Button>
+                  </div>
+                  {nwcError && (
+                    <p className="text-[11px] text-destructive">{nwcError}</p>
+                  )}
+                </div>
 
                 <div className="relative flex items-center justify-center my-1">
                   <div className="absolute inset-0 flex items-center">
