@@ -20,6 +20,7 @@ fn setup_app() -> axum::Router {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -42,6 +43,7 @@ fn setup_app() -> axum::Router {
         )),
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     create_routes(state)
@@ -105,6 +107,7 @@ async fn test_models_endpoint_dynamic_upstream() {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -127,6 +130,7 @@ async fn test_models_endpoint_dynamic_upstream() {
         macaroon_service,
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     let app = create_routes(state);
@@ -203,6 +207,7 @@ async fn test_chat_completions_pay_per_request_flow() {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -228,6 +233,7 @@ async fn test_chat_completions_pay_per_request_flow() {
         macaroon_service: macaroon_service.clone(),
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     let app = create_routes(state);
@@ -352,6 +358,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -375,6 +382,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
         )),
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     let macaroon_service = state.macaroon_service.clone();
@@ -478,6 +486,7 @@ async fn test_chat_completions_capability_authorization() {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -502,6 +511,7 @@ async fn test_chat_completions_capability_authorization() {
         )),
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     let macaroon_service = state.macaroon_service.clone();

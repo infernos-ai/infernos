@@ -235,19 +235,29 @@ pub async fn chat_completions(
     }
 }
 
-pub async fn node_stats(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn node_stats(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, Error> {
+    state.verify_admin(&headers)?;
+
     let requests = state.stats.total_requests.load(std::sync::atomic::Ordering::SeqCst);
     let earned = state.stats.total_sats_earned.load(std::sync::atomic::Ordering::SeqCst);
     
-    Json(json!({
+    Ok(Json(json!({
         "total_requests": requests,
         "total_sats_earned": earned,
-    }))
+    })))
 }
 
-pub async fn node_config(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn node_config(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, Error> {
+    state.verify_admin(&headers)?;
+
     let pricing = state.live_pricing.read().await.clone();
-    Json(json!({
+    Ok(Json(json!({
         "pricing": {
             "default_price_sats": pricing.default_price_sats,
             "sats_per_prompt_token": pricing.sats_per_prompt_token,
@@ -256,20 +266,30 @@ pub async fn node_config(State(state): State<AppState>) -> impl IntoResponse {
         "upstream": {
             "url": state.config.upstream.url
         }
-    }))
+    })))
 }
 
 pub async fn update_node_config(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<crate::config::schema::PricingConfig>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, Error> {
+    state.verify_admin(&headers)?;
+
     let mut pricing = state.live_pricing.write().await;
     *pricing = payload.clone();
     
-    Json(json!({
+    tracing::info!(
+        default_price_sats = payload.default_price_sats.0,
+        sats_per_prompt_token = payload.sats_per_prompt_token,
+        sats_per_completion_token = payload.sats_per_completion_token,
+        "Node pricing updated via admin endpoint"
+    );
+
+    Ok(Json(json!({
         "status": "success",
         "pricing": payload
-    }))
+    })))
 }
 
 // Error Mapping for Axum
@@ -288,7 +308,9 @@ impl IntoResponse for Error {
                     .into_response();
             }
             Error::SessionRequired => (StatusCode::PAYMENT_REQUIRED, self.to_string()),
-            Error::VerificationFailed(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
+            Error::Unauthorized(_) | Error::VerificationFailed(_) => {
+                (StatusCode::UNAUTHORIZED, self.to_string())
+            }
             Error::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
             Error::BudgetExhausted(_) => (StatusCode::PAYMENT_REQUIRED, self.to_string()), // Or 403
             Error::Upstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
