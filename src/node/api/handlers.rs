@@ -336,12 +336,9 @@ pub async fn mock_pay(
             "Mock payment endpoint is only available when lightning backend is 'mock'".to_string(),
         ));
     }
-    let backend_any = state.lightning.as_any();
-    let mock_backend = backend_any
-        .downcast_ref::<crate::node::lightning::mock::MockLightningBackend>()
-        .ok_or_else(|| Error::Lightning("Backend is not mock".to_string()))?;
 
-    let preimage = mock_backend
+    let preimage = state
+        .lightning
         .pay_invoice(&payload.invoice)
         .await
         .map_err(|e| Error::Lightning(e.to_string()))?;

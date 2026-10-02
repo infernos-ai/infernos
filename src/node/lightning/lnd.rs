@@ -216,8 +216,8 @@ impl LightningBackend for LndBackend {
         Ok(is_settled)
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    async fn pay_invoice(&self, invoice: &str) -> Result<String> {
+        self.pay_invoice(invoice).await
     }
 }
 

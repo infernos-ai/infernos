@@ -29,10 +29,6 @@ struct DeterministicNodeLightning {
 
 #[async_trait]
 impl LightningBackend for DeterministicNodeLightning {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
     async fn create_invoice(
         &self,
         amount_sats: Satoshis,
