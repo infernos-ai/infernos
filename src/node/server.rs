@@ -65,6 +65,7 @@ impl InfernosServer {
         tracing::info!("Starting Infernos Node on {}", addr);
 
         let macaroon_key = Self::load_or_generate_macaroon_key(&self.config.data_dir)?;
+        let admin_token = Self::load_or_generate_admin_token(&self.config)?;
 
         let proxy = OpenAiProxy::new(self.config.upstream.url.clone());
 
@@ -100,6 +101,7 @@ impl InfernosServer {
             macaroon_service: Arc::new(MacaroonService::new(macaroon_key, "infernos-node")),
             proxy,
             stats: Arc::new(crate::node::api::NodeStats::default()),
+            admin_token: Arc::new(admin_token),
         };
 
         let app = create_routes(state).layer(
@@ -160,5 +162,67 @@ impl InfernosServer {
         })?;
 
         Ok(key.to_vec())
+    }
+
+    fn load_or_generate_admin_token(config: &NodeConfig) -> Result<String> {
+        use rand::RngCore;
+        use std::fs;
+        use std::path::Path;
+
+        // 1. Environment variable override
+        if let Ok(env_token) = std::env::var("INFERNOS_ADMIN_TOKEN") {
+            let trimmed = env_token.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+
+        // 2. Explicit config file option
+        if let Some(token) = &config.server.admin_token {
+            let trimmed = token.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+
+        // 3. Persist or read from data_dir/.infernos_admin_token
+        let data_path = Path::new(&config.data_dir);
+        if !data_path.exists() {
+            fs::create_dir_all(data_path).map_err(|e| {
+                crate::common::error::Error::Internal(format!(
+                    "Failed to create data directory: {}",
+                    e
+                ))
+            })?;
+        }
+
+        let token_path = data_path.join(".infernos_admin_token");
+        if token_path.exists() {
+            let token = fs::read_to_string(&token_path).map_err(|e| {
+                crate::common::error::Error::Internal(format!("Failed to read admin token: {}", e))
+            })?;
+            let trimmed = token.trim().to_string();
+            if !trimmed.is_empty() {
+                return Ok(trimmed);
+            }
+        }
+
+        let mut token_bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut token_bytes);
+        let new_token = hex::encode(token_bytes);
+
+        fs::write(&token_path, &new_token).map_err(|e| {
+            crate::common::error::Error::Internal(format!(
+                "Failed to persist admin token: {}",
+                e
+            ))
+        })?;
+
+        tracing::info!(
+            "Generated new node admin token and saved to {}",
+            token_path.display()
+        );
+
+        Ok(new_token)
     }
 }

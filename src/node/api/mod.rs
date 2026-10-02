@@ -25,11 +25,37 @@ pub struct AppState {
     pub macaroon_service: Arc<MacaroonService>,
     pub proxy: OpenAiProxy,
     pub stats: Arc<NodeStats>,
+    pub admin_token: Arc<String>,
 }
 
 impl AppState {
     pub async fn pricing_calculator(&self) -> PricingCalculator {
         let pricing = self.live_pricing.read().await.clone();
         PricingCalculator::new(pricing)
+    }
+
+    pub fn verify_admin(&self, headers: &axum::http::HeaderMap) -> crate::common::error::Result<()> {
+        let auth_val = headers
+            .get(axum::http::header::AUTHORIZATION)
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| {
+                crate::common::error::Error::Unauthorized(
+                    "Admin authorization required: missing Authorization header".to_string(),
+                )
+            })?;
+
+        let token = auth_val.strip_prefix("Bearer ").ok_or_else(|| {
+            crate::common::error::Error::Unauthorized(
+                "Invalid authorization scheme: Bearer token required".to_string(),
+            )
+        })?;
+
+        if token == self.admin_token.as_str() {
+            Ok(())
+        } else {
+            Err(crate::common::error::Error::Unauthorized(
+                "Invalid admin token".to_string(),
+            ))
+        }
     }
 }

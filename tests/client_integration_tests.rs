@@ -108,6 +108,7 @@ async fn test_end_to_end_client_node_integration() {
         server: ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 0,
+            admin_token: None,
         },
         pricing: PricingConfig::new(Satoshis(10)),
         upstream: UpstreamConfig {
@@ -128,6 +129,7 @@ async fn test_end_to_end_client_node_integration() {
         )),
         proxy: OpenAiProxy::new(upstream_mock.uri()),
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     let app = create_routes(state);

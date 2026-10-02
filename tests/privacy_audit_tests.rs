@@ -40,6 +40,7 @@ fn setup_app() -> axum::Router {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
         pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
@@ -63,6 +64,7 @@ fn setup_app() -> axum::Router {
         )),
         proxy,
         stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     create_routes(state).layer(
