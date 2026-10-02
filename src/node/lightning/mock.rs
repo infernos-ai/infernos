@@ -75,8 +75,8 @@ impl MockLightningBackend {
 
 #[async_trait]
 impl LightningBackend for MockLightningBackend {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    async fn pay_invoice(&self, invoice: &str) -> Result<String> {
+        self.pay_invoice(invoice).await
     }
 
     async fn create_invoice(&self, amount_sats: Satoshis, _memo: &str) -> Result<Invoice> {

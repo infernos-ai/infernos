@@ -5,7 +5,6 @@ use crate::node::lightning::invoice::Invoice;
 use async_trait::async_trait;
 use nostr::nips::nip47::{MakeInvoiceRequest, LookupInvoiceRequest, NostrWalletConnectUri};
 use nwc::NostrWalletConnect;
-use std::any::Any;
 use std::str::FromStr;
 
 pub struct NwcLightningBackend {
@@ -57,10 +56,6 @@ impl LightningBackend for NwcLightningBackend {
         })?;
         
         Ok(lookup_res.settled_at.is_some())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
