@@ -7,8 +7,11 @@ use nostr::nips::nip47::{MakeInvoiceRequest, LookupInvoiceRequest, NostrWalletCo
 use nwc::NostrWalletConnect;
 use std::str::FromStr;
 
+use std::sync::Arc;
+
 pub struct NwcLightningBackend {
     pub uri: NostrWalletConnectUri,
+    client: Arc<NostrWalletConnect>,
 }
 
 impl NwcLightningBackend {
@@ -16,21 +19,37 @@ impl NwcLightningBackend {
         let uri = NostrWalletConnectUri::from_str(&uri_str).map_err(|e| {
             Error::Config(format!("Invalid NWC URI: {}", e))
         })?;
-        Ok(Self { uri })
+        let client = Arc::new(NostrWalletConnect::new(uri.clone()));
+        Ok(Self { uri, client })
+    }
+
+    pub fn client(&self) -> &NostrWalletConnect {
+        &self.client
+    }
+
+    pub async fn pay_invoice(&self, invoice: &str) -> Result<String> {
+        let req = nostr::nips::nip47::PayInvoiceRequest {
+            id: None,
+            invoice: invoice.to_string(),
+            amount: None,
+        };
+        let res = self.client.pay_invoice(req).await.map_err(|e| {
+            Error::Lightning(format!("NWC pay_invoice error: {}", e))
+        })?;
+        Ok(res.preimage)
     }
 }
 
 #[async_trait]
 impl LightningBackend for NwcLightningBackend {
     async fn create_invoice(&self, amount: Satoshis, description: &str) -> Result<Invoice> {
-        let client = NostrWalletConnect::new(self.uri.clone());
         let req = MakeInvoiceRequest {
             amount: amount.0 * 1000, // millisats
             description: Some(description.to_string()),
             description_hash: None,
             expiry: None,
         };
-        let invoice_res = client.make_invoice(req).await.map_err(|e| {
+        let invoice_res = self.client.make_invoice(req).await.map_err(|e| {
             Error::Lightning(format!("NWC make_invoice error: {}", e))
         })?;
         
@@ -46,16 +65,27 @@ impl LightningBackend for NwcLightningBackend {
     }
 
     async fn is_invoice_settled(&self, payment_hash: &PaymentHash) -> Result<bool> {
-        let client = NostrWalletConnect::new(self.uri.clone());
         let req = LookupInvoiceRequest {
             payment_hash: Some(payment_hash.0.clone()),
             invoice: None,
         };
-        let lookup_res = client.lookup_invoice(req).await.map_err(|e| {
+        let lookup_res = self.client.lookup_invoice(req).await.map_err(|e| {
             Error::Lightning(format!("NWC lookup_invoice error: {}", e))
         })?;
         
         Ok(lookup_res.settled_at.is_some())
+    }
+}
+
+#[async_trait]
+impl crate::client::pay::LightningPaymentProvider for NwcLightningBackend {
+    async fn pay_invoice(
+        &self,
+        invoice: &str,
+    ) -> std::result::Result<String, crate::client::error::ClientError> {
+        NwcLightningBackend::pay_invoice(self, invoice)
+            .await
+            .map_err(|e| crate::client::error::ClientError::Payment(e.to_string()))
     }
 }
 

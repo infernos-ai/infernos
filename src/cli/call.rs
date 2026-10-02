@@ -31,6 +31,10 @@ pub struct CallArgs {
     /// Optional path to payer LND tls.cert
     #[arg(long)]
     pub payer_tls_cert: Option<String>,
+
+    /// Optional Nostr Wallet Connect (NWC) URI to pay invoices automatically (nostr+walletconnect://...)
+    #[arg(long)]
+    pub payer_nwc_uri: Option<String>,
 }
 
 struct InteractiveOrMockPaymentProvider {
@@ -98,6 +102,10 @@ impl LightningPaymentProvider for InteractiveOrMockPaymentProvider {
 }
 
 pub async fn handle_call_command(args: CallArgs) {
+    let payer_nwc_uri = args
+        .payer_nwc_uri
+        .clone()
+        .or_else(|| std::env::var("INFERNOS_PAYER_NWC_URI").ok());
     let payer_host = args
         .payer_lnd_host
         .clone()
@@ -107,12 +115,23 @@ pub async fn handle_call_command(args: CallArgs) {
         .clone()
         .or_else(|| std::env::var("LND_PAYER_MACAROON_PATH").ok());
 
-    let (provider, payment_mode): (Arc<dyn LightningPaymentProvider>, &str) = if let (
-        Some(host),
-        Some(macaroon),
-    ) =
-        (payer_host, payer_macaroon)
+    let (provider, payment_mode): (Arc<dyn LightningPaymentProvider>, &str) = if let Some(nwc_uri) =
+        payer_nwc_uri
     {
+        match crate::node::lightning::nwc::NwcLightningBackend::new(nwc_uri) {
+            Ok(backend) => (Arc::new(backend), "NWC (Automated)"),
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to initialize payer NWC backend ({}), falling back to interactive payment.",
+                    e
+                );
+                (
+                    Arc::new(InteractiveOrMockPaymentProvider::new(args.node.clone())),
+                    "Interactive Lightning",
+                )
+            }
+        }
+    } else if let (Some(host), Some(macaroon)) = (payer_host, payer_macaroon) {
         let cfg = crate::config::schema::LightningConfig {
             backend: crate::config::schema::LightningBackendType::Lnd,
             network: crate::config::schema::BitcoinNetwork::Testnet,
