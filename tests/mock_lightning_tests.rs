@@ -3,7 +3,6 @@ use infernos::node::lightning::backend::LightningBackend;
 use infernos::node::lightning::mock::MockLightningBackend;
 
 #[tokio::test]
-#[ignore]
 async fn test_mock_backend_create_and_settle() {
     let backend = MockLightningBackend::new();
 

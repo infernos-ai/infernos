@@ -85,7 +85,7 @@ impl LightningBackend for MockLightningBackend {
         let preimage_str = hex::encode(key);
         
         let mut hasher = Sha256::new();
-        hasher.update(&key);
+        hasher.update(key);
         let payment_hash_str = hex::encode(hasher.finalize());
         let invoice_str = format!("lnbc{}mock{}", amount_sats.0, payment_hash_str);
 
