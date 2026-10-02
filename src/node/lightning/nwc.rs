@@ -59,4 +59,22 @@ impl LightningBackend for NwcLightningBackend {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_nwc_backend_invalid_uri_rejected() {
+        let res = NwcLightningBackend::new("invalid_uri_format".to_string());
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_nwc_backend_valid_uri_parsing() {
+        let valid_uri = "nostr+walletconnect://b889ff5b1513b641e2a139f661a661364979c5beee91842f8f0ef42ab558e9d4?relay=wss%3A%2F%2Frelay.damus.io&secret=71a8c14c1407c113601079c4302dab36460f0ccd0ad506f1f2dc73b5100e4f3c";
+        let res = NwcLightningBackend::new(valid_uri.to_string());
+        assert!(res.is_ok());
+    }
+}
+
 
