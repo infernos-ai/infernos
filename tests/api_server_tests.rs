@@ -640,3 +640,149 @@ async fn test_chat_completions_capability_authorization() {
     // Auth succeeded, fails at proxy layer
     assert_eq!(resp_valid.status(), StatusCode::BAD_GATEWAY);
 }
+
+#[tokio::test]
+async fn test_node_stats_security_access_control() {
+    let app = setup_app();
+
+    // 1. Missing Authorization header -> 401 Unauthorized
+    let resp_unauth = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/node/stats")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_unauth.status(), StatusCode::UNAUTHORIZED);
+
+    // 2. Invalid Bearer token -> 401 Unauthorized
+    let resp_bad_token = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/node/stats")
+                .header("Authorization", "Bearer invalid_secret_token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_bad_token.status(), StatusCode::UNAUTHORIZED);
+
+    // 3. Valid admin token -> 200 OK
+    let resp_auth = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/node/stats")
+                .header("Authorization", "Bearer test-admin-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_auth.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(resp_auth.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let stats_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert!(stats_json.get("total_requests").is_some());
+    assert!(stats_json.get("total_sats_earned").is_some());
+}
+
+#[tokio::test]
+async fn test_node_config_security_access_control() {
+    let app = setup_app();
+
+    // 1. Missing Authorization header on GET -> 401 Unauthorized
+    let resp_get_unauth = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/node/config")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_get_unauth.status(), StatusCode::UNAUTHORIZED);
+
+    // 2. Missing Authorization header on POST -> 401 Unauthorized (prevents remote price tampering)
+    let payload = json!({
+        "default_price_sats": 0,
+        "sats_per_prompt_token": 0,
+        "sats_per_completion_token": 0
+    });
+
+    let resp_post_unauth = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/node/config")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_post_unauth.status(), StatusCode::UNAUTHORIZED);
+
+    // 3. Invalid admin token -> 401 Unauthorized
+    let resp_post_bad_token = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/node/config")
+                .header("Authorization", "Bearer hacker_token")
+                .header("content-type", "application/json")
+                .body(Body::from(payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_post_bad_token.status(), StatusCode::UNAUTHORIZED);
+
+    // 4. Authorized POST with valid admin token -> 200 OK and pricing updated
+    let valid_payload = json!({
+        "default_price_sats": 42,
+        "sats_per_prompt_token": 1,
+        "sats_per_completion_token": 2
+    });
+
+    let resp_post_auth = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/node/config")
+                .header("Authorization", "Bearer test-admin-token")
+                .header("content-type", "application/json")
+                .body(Body::from(valid_payload.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_post_auth.status(), StatusCode::OK);
+
+    // 5. Authorized GET confirms updated pricing
+    let resp_get_auth = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/node/config")
+                .header("Authorization", "Bearer test-admin-token")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp_get_auth.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(resp_get_auth.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let config_json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+    assert_eq!(config_json["pricing"]["default_price_sats"], 42);
+}
