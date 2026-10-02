@@ -29,6 +29,10 @@ struct DeterministicNodeLightning {
 
 #[async_trait]
 impl LightningBackend for DeterministicNodeLightning {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     async fn create_invoice(
         &self,
         amount_sats: Satoshis,
@@ -53,10 +57,7 @@ impl LightningBackend for DeterministicNodeLightning {
         Ok(settled)
     }
 
-    async fn pay_invoice(&self, _invoice: &str) -> infernos::common::error::Result<String> {
-        *self.is_settled.lock().await = true;
-        Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string())
-    }
+
 }
 
 /// A client-side payment provider that "pays" the deterministic invoice by returning the expected preimage
@@ -117,7 +118,8 @@ async fn test_end_to_end_client_node_integration() {
     };
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: Arc::new(node_lightning.clone()),
         budget_manager: Arc::new(SessionBudgetManager::new()),
         macaroon_service: Arc::new(MacaroonService::new(
@@ -125,6 +127,7 @@ async fn test_end_to_end_client_node_integration() {
             "infernos-node",
         )),
         proxy: OpenAiProxy::new(upstream_mock.uri()),
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     let app = create_routes(state);

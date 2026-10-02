@@ -7,7 +7,7 @@ use infernos::node::api::routes::create_routes;
 use infernos::node::api::AppState;
 use infernos::node::gate::challenge::L402Challenge;
 use infernos::node::gate::{MacaroonService, SessionBudgetManager};
-use infernos::node::lightning::backend::MockLightningBackend;
+use infernos::node::lightning::mock::MockLightningBackend;
 use infernos::node::proxy::openai::OpenAiProxy;
 use serde_json::json;
 use std::sync::Arc;
@@ -32,7 +32,8 @@ fn setup_app() -> axum::Router {
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: Arc::new(MockLightningBackend::new()),
         budget_manager: Arc::new(SessionBudgetManager::new()),
         macaroon_service: Arc::new(MacaroonService::new(
@@ -40,6 +41,7 @@ fn setup_app() -> axum::Router {
             "infernos-node",
         )),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     create_routes(state)
@@ -118,11 +120,13 @@ async fn test_models_endpoint_dynamic_upstream() {
     let macaroon_service = Arc::new(MacaroonService::new(vec![0u8; 32], "infernos-node"));
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning,
         budget_manager,
         macaroon_service,
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     let app = create_routes(state);
@@ -217,11 +221,13 @@ async fn test_chat_completions_pay_per_request_flow() {
     ));
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: lightning.clone(),
         budget_manager,
         macaroon_service: macaroon_service.clone(),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     let app = create_routes(state);
@@ -359,7 +365,8 @@ async fn test_api_e2e_flow_with_budget_debit() {
     let lightning = Arc::new(MockLightningBackend::new());
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: lightning.clone(),
         budget_manager: Arc::new(SessionBudgetManager::new()),
         macaroon_service: Arc::new(MacaroonService::new(
@@ -367,6 +374,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
             "infernos-node",
         )),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     let macaroon_service = state.macaroon_service.clone();
@@ -484,7 +492,8 @@ async fn test_chat_completions_capability_authorization() {
     let budget_manager = Arc::new(SessionBudgetManager::new());
 
     let state = AppState {
-        config: Arc::new(config),
+        config: std::sync::Arc::new(config.clone()),
+        live_pricing: std::sync::Arc::new(tokio::sync::RwLock::new(config.pricing.clone())),
         lightning: lightning.clone(),
         budget_manager: budget_manager.clone(),
         macaroon_service: Arc::new(MacaroonService::new(
@@ -492,6 +501,7 @@ async fn test_chat_completions_capability_authorization() {
             "infernos-node",
         )),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
     };
 
     let macaroon_service = state.macaroon_service.clone();

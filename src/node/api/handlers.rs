@@ -103,6 +103,7 @@ pub async fn chat_completions(
         .map(|v| v as usize);
     let cost = state
         .pricing_calculator()
+        .await
         .calculate_cost(prompt_tokens, max_completion_tokens);
     let req_model = payload.get("model").and_then(|m| m.as_str());
 
@@ -212,6 +213,10 @@ pub async fn chat_completions(
         resp.headers_mut().extend(response_headers);
         resp.headers_mut()
             .insert("content-type", "text/event-stream".parse().unwrap());
+        
+        state.stats.total_requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        state.stats.total_sats_earned.fetch_add(cost.0, std::sync::atomic::Ordering::SeqCst);
+        
         Ok(resp)
     } else {
         // Proxy the request
@@ -222,8 +227,49 @@ pub async fn chat_completions(
 
         let mut resp = Json(proxy_resp).into_response();
         resp.headers_mut().extend(response_headers);
+        
+        state.stats.total_requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        state.stats.total_sats_earned.fetch_add(cost.0, std::sync::atomic::Ordering::SeqCst);
+        
         Ok(resp)
     }
+}
+
+pub async fn node_stats(State(state): State<AppState>) -> impl IntoResponse {
+    let requests = state.stats.total_requests.load(std::sync::atomic::Ordering::SeqCst);
+    let earned = state.stats.total_sats_earned.load(std::sync::atomic::Ordering::SeqCst);
+    
+    Json(json!({
+        "total_requests": requests,
+        "total_sats_earned": earned,
+    }))
+}
+
+pub async fn node_config(State(state): State<AppState>) -> impl IntoResponse {
+    let pricing = state.live_pricing.read().await.clone();
+    Json(json!({
+        "pricing": {
+            "default_price_sats": pricing.default_price_sats,
+            "sats_per_prompt_token": pricing.sats_per_prompt_token,
+            "sats_per_completion_token": pricing.sats_per_completion_token,
+        },
+        "upstream": {
+            "url": state.config.upstream.url
+        }
+    }))
+}
+
+pub async fn update_node_config(
+    State(state): State<AppState>,
+    Json(payload): Json<crate::config::schema::PricingConfig>,
+) -> impl IntoResponse {
+    let mut pricing = state.live_pricing.write().await;
+    *pricing = payload.clone();
+    
+    Json(json!({
+        "status": "success",
+        "pricing": payload
+    }))
 }
 
 // Error Mapping for Axum
@@ -268,8 +314,12 @@ pub async fn mock_pay(
             "Mock payment endpoint is only available when lightning backend is 'mock'".to_string(),
         ));
     }
-    let preimage = state
-        .lightning
+    let backend_any = state.lightning.as_any();
+    let mock_backend = backend_any
+        .downcast_ref::<crate::node::lightning::mock::MockLightningBackend>()
+        .ok_or_else(|| Error::Lightning("Backend is not mock".to_string()))?;
+
+    let preimage = mock_backend
         .pay_invoice(&payload.invoice)
         .await
         .map_err(|e| Error::Lightning(e.to_string()))?;

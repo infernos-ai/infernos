@@ -59,6 +59,9 @@ anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.13", features = ["v4", "serde"] }
 bytes = "1.12.1"
+nostr-sdk = "0.45.4"
+nostr = { version = "0.45.5", features = ["nip47"] }
+nwc = "0.45.1"
 
 [dev-dependencies]
 tokio-test = "0.4"

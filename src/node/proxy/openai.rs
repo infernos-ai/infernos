@@ -129,6 +129,7 @@ impl OpenAiProxy {
         &self,
         request: Value,
     ) -> Result<impl Stream<Item = Result<bytes::Bytes>>> {
+
         let url = format!("{}/v1/chat/completions", self.upstream_url);
 
         let resp = self

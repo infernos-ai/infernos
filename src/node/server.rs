@@ -3,7 +3,10 @@ use crate::config::schema::NodeConfig;
 use crate::node::api::routes::create_routes;
 use crate::node::api::AppState;
 use crate::node::gate::{MacaroonService, SessionBudgetManager};
-use crate::node::lightning::backend::MockLightningBackend;
+use crate::node::lightning::mock::MockLightningBackend;
+use crate::node::lightning::nwc::NwcLightningBackend;
+use crate::node::lightning::LightningBackend;
+use crate::config::schema::LightningBackendType;
 use crate::node::proxy::openai::OpenAiProxy;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
@@ -65,36 +68,38 @@ impl InfernosServer {
 
         let proxy = OpenAiProxy::new(self.config.upstream.url.clone());
 
-        let lightning: Arc<dyn crate::node::lightning::LightningBackend> =
-            match self.config.lightning.backend {
-                crate::config::schema::LightningBackendType::Mock => {
-                    tracing::info!("Initializing Mock Lightning backend");
-                    Arc::new(MockLightningBackend::new())
-                }
-                crate::config::schema::LightningBackendType::Lnd => {
-                    tracing::info!(
-                        "Connecting to LND REST backend on {} ({:?})",
-                        self.config.lightning.lnd_rpc_host.as_deref().unwrap_or(""),
-                        self.config.lightning.network
-                    );
-                    let backend =
-                        crate::node::lightning::LndBackend::from_config(&self.config.lightning)?;
-                    Arc::new(backend)
-                }
-                crate::config::schema::LightningBackendType::Nwc => {
-                    return Err(crate::common::error::Error::Config(
-                    "Nostr Wallet Connect (NWC) backend is not yet supported. Use 'lnd' or 'mock'."
-                        .to_string(),
-                ));
-                }
-            };
+        let lightning_backend: Arc<dyn LightningBackend> = match self.config.lightning.backend {
+            LightningBackendType::Mock => {
+                tracing::info!("Initializing Mock Lightning backend");
+                Arc::new(MockLightningBackend::new())
+            },
+            LightningBackendType::Nwc => {
+                tracing::info!("Connecting to NWC backend");
+                let uri = std::env::var("INFERNOS_NWC_URI")
+                    .or_else(|_| self.config.lightning.nwc_uri.clone().ok_or("Missing INFERNOS_NWC_URI".to_string()))
+                    .map_err(|e| crate::common::error::Error::Config(format!("NWC configuration error: {}", e)))?;
+                Arc::new(NwcLightningBackend::new(uri)?)
+            },
+            LightningBackendType::Lnd => {
+                tracing::info!(
+                    "Connecting to LND REST backend on {} ({:?})",
+                    self.config.lightning.lnd_rpc_host.as_deref().unwrap_or(""),
+                    self.config.lightning.network
+                );
+                let backend =
+                    crate::node::lightning::LndBackend::from_config(&self.config.lightning)?;
+                Arc::new(backend)
+            }
+        };
 
         let state = AppState {
             config: Arc::new(self.config.clone()),
-            lightning,
+            live_pricing: Arc::new(tokio::sync::RwLock::new(self.config.pricing.clone())),
+            lightning: lightning_backend,
             budget_manager: Arc::new(SessionBudgetManager::new()),
             macaroon_service: Arc::new(MacaroonService::new(macaroon_key, "infernos-node")),
             proxy,
+            stats: Arc::new(crate::node::api::NodeStats::default()),
         };
 
         let app = create_routes(state).layer(
