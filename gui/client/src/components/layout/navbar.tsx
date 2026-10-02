@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Zap } from "lucide-react";
@@ -13,6 +13,12 @@ const ConnectButton = dynamic(
 
 export function Navbar() {
   const [network, setNetwork] = useState<"regtest" | "testnet" | "mainnet">("regtest");
+
+  useEffect(() => {
+    import("@getalby/bitcoin-connect").then(({ init }) => {
+      init({ appName: "Infernos" });
+    });
+  }, []);
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
