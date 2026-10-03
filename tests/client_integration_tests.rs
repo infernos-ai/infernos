@@ -112,6 +112,7 @@ async fn test_end_to_end_client_node_integration() {
         },
         lightning: LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let state = AppState {

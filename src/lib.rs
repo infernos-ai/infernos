@@ -4,6 +4,7 @@ pub mod cli;
 pub mod client;
 pub mod common;
 pub mod config;
+pub mod discovery;
 pub mod node;
 
 pub use common::error::{Error, Result};

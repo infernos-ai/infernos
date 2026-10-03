@@ -1,4 +1,5 @@
 pub mod call;
+pub mod discover;
 pub mod node;
 pub mod process;
 
@@ -21,4 +22,6 @@ pub enum Commands {
     Node(node::NodeArgs),
     /// Caller inference commands
     Call(call::CallArgs),
+    /// Discover active Infernos nodes announced on Nostr relays
+    Discover(discover::DiscoverArgs),
 }

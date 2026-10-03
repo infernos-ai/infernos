@@ -48,6 +48,7 @@ fn setup_app() -> axum::Router {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());

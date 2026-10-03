@@ -28,6 +28,7 @@ fn setup_app() -> axum::Router {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
@@ -115,6 +116,7 @@ async fn test_models_endpoint_dynamic_upstream() {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
@@ -215,6 +217,7 @@ async fn test_chat_completions_pay_per_request_flow() {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
@@ -366,6 +369,7 @@ async fn test_api_e2e_flow_with_budget_debit() {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
@@ -494,6 +498,7 @@ async fn test_chat_completions_capability_authorization() {
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());

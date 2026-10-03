@@ -14,6 +14,11 @@ async fn main() -> Result<()> {
         Commands::Call(args) => {
             infernos::cli::call::handle_call_command(args).await;
         }
+        Commands::Discover(args) => {
+            if let Err(e) = infernos::cli::discover::handle_discover_command(args).await {
+                eprintln!("Discovery error: {}", e);
+            }
+        }
     }
 
     Ok(())

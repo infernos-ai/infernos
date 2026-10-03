@@ -110,6 +110,39 @@ impl Default for LightningConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DiscoveryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_discovery_relays")]
+    pub relays: Vec<String>,
+    #[serde(default)]
+    pub node_name: Option<String>,
+    #[serde(default)]
+    pub public_url: Option<String>,
+    #[serde(default)]
+    pub nsec: Option<String>,
+}
+
+fn default_discovery_relays() -> Vec<String> {
+    vec![
+        "wss://relay.damus.io".to_string(),
+        "wss://nos.lol".to_string(),
+    ]
+}
+
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            relays: default_discovery_relays(),
+            node_name: None,
+            public_url: None,
+            nsec: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct NodeConfig {
     #[serde(default)]
@@ -120,6 +153,8 @@ pub struct NodeConfig {
     pub pricing: PricingConfig,
     #[serde(default)]
     pub lightning: LightningConfig,
+    #[serde(default)]
+    pub discovery: DiscoveryConfig,
     #[serde(default = "default_data_dir")]
     pub data_dir: String,
 }
