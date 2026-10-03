@@ -5,17 +5,25 @@ import { NodeStatus } from "@/components/infernos/node-status";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Zap, Activity, ChevronDown, ChevronRight, Key, Cpu } from "lucide-react";
+import { ShieldCheck, Zap, Activity, ChevronDown, ChevronRight, Key, Cpu, AlertTriangle, Coins } from "lucide-react";
 import { SessionStatus, SessionData } from "@/types/session";
 import { fetchNodeHealth } from "@/lib/api/node";
 
 interface ProtocolPanelProps {
   sessionStatus: SessionStatus;
   sessionData: SessionData;
+  errorMessage?: string | null;
+  onBudgetChange?: (budget: number) => void;
   onStartSession: () => void;
 }
 
-export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: ProtocolPanelProps) {
+export function ProtocolPanel({
+  sessionStatus,
+  sessionData,
+  errorMessage,
+  onBudgetChange,
+  onStartSession,
+}: ProtocolPanelProps) {
   const [l402Expanded, setL402Expanded] = useState(false);
   const [isNodeOnline, setIsNodeOnline] = useState<boolean | null>(null);
 
@@ -69,26 +77,97 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
           
           {sessionStatus === "idle" || sessionStatus === "creating" || sessionStatus === "error" ? (
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">
-                {sessionStatus === "error" ? "Connection failed. Make sure the Rust node is running." : "No active session. Create a session to begin inference."}
-              </p>
-              <div className="flex justify-between items-end pb-2">
-                <SatsAmount amount={sessionData.budget_sats} label="Budget" />
+              {errorMessage ? (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs flex flex-col gap-1.5 text-destructive">
+                  <div className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    Session Failed
+                  </div>
+                  <p className="font-mono text-[11px] leading-relaxed break-words">{errorMessage}</p>
+                  {errorMessage.toLowerCase().includes("lnd") && (
+                    <div className="text-[10px] text-muted-foreground mt-1 border-t border-destructive/20 pt-1.5 leading-relaxed">
+                      💡 <strong>Diagnosis:</strong> The node cannot connect to LND at port 8081. Verify your Polar network is started or set <code className="bg-muted px-1 rounded">backend = "mock"</code> in <code className="bg-muted px-1 rounded">config/node.toml</code>.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Open an L402 inference session. Set your spend budget below before connecting.
+                </p>
+              )}
+
+              {/* Set Budget Section */}
+              <div className="flex flex-col gap-2 pt-1 border-t border-border/40">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-foreground flex items-center gap-1">
+                    <Coins className="w-3.5 h-3.5 text-lightning" /> Set Session Budget:
+                  </span>
+                  <span className="font-mono text-lightning font-semibold">
+                    {sessionData.budget_sats} SATS
+                  </span>
+                </div>
+
+                <div className="relative flex items-center">
+                  <input
+                    type="number"
+                    min="1"
+                    max="1000000"
+                    value={sessionData.budget_sats || ""}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (onBudgetChange) {
+                        onBudgetChange(isNaN(val) ? 0 : val);
+                      }
+                    }}
+                    disabled={sessionStatus === "creating"}
+                    placeholder="Enter budget in sats..."
+                    className="w-full h-9 px-3 pr-12 text-sm bg-card border border-border/80 rounded-md font-mono focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all text-foreground"
+                  />
+                  <span className="absolute right-3 text-xs font-mono text-muted-foreground pointer-events-none">
+                    sats
+                  </span>
+                </div>
+
+                {/* Preset Chips */}
+                <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                  {[50, 100, 250, 500].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => onBudgetChange && onBudgetChange(preset)}
+                      disabled={sessionStatus === "creating"}
+                      className={`py-1 text-xs font-mono rounded border transition-all ${
+                        sessionData.budget_sats === preset
+                          ? "bg-primary/20 border-primary text-primary font-semibold shadow-sm"
+                          : "border-border/50 bg-card/40 hover:bg-card text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <Button 
                 onClick={onStartSession} 
-                className="w-full" 
-                disabled={sessionStatus === "creating"}
+                className="w-full font-medium mt-1" 
+                disabled={sessionStatus === "creating" || !sessionData.budget_sats}
                 variant={sessionStatus === "error" ? "destructive" : "default"}
               >
-                {sessionStatus === "creating" ? "Creating..." : sessionStatus === "error" ? "Retry" : "Create Session"}
+                {sessionStatus === "creating"
+                  ? "Creating Session..."
+                  : sessionStatus === "error"
+                  ? "Retry Session"
+                  : `Open Session (${sessionData.budget_sats} Sats)`}
               </Button>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
                 <span className="text-xs text-muted-foreground uppercase tracking-wider">ID</span>
-                <span className="font-mono text-xs text-foreground truncate" title={sessionData.id}>{sessionData.id || "sess_..."}</span>
+                <span className="font-mono text-xs text-foreground truncate" title={sessionData.id}>
+                  {sessionData.id || "sess_..."}
+                </span>
               </div>
 
               {/* Budget Meter */}
@@ -99,7 +178,14 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
                     <span className="text-xs text-muted-foreground">/ {sessionData.budget_sats} sats</span>
                   </div>
                 </div>
-                <Progress value={((sessionData.remaining_sats ?? sessionData.budget_sats) / sessionData.budget_sats) * 100} className="h-2" />
+                <Progress
+                  value={
+                    sessionData.budget_sats > 0
+                      ? ((sessionData.remaining_sats ?? sessionData.budget_sats) / sessionData.budget_sats) * 100
+                      : 0
+                  }
+                  className="h-2"
+                />
               </div>
             </div>
           )}
@@ -142,7 +228,7 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
             <div className="flex flex-col gap-3 pt-2">
               <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Authorization</h3>
               
-              <div className={`flex flex-col gap-2`}>
+              <div className="flex flex-col gap-2">
                 <div className={`flex items-center gap-3 text-sm ${sessionStatus === 'active' ? '' : 'opacity-50'}`}>
                   <ShieldCheck className={`w-4 h-4 ${sessionStatus === 'active' ? 'text-success' : ''}`} />
                   <span className="text-muted-foreground">Payment proof {sessionStatus === 'active' ? 'verified' : 'pending'}</span>
@@ -171,5 +257,3 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
     </div>
   );
 }
-
-

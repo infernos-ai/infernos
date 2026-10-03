@@ -44,12 +44,19 @@ pub async fn new_session(
     State(state): State<AppState>,
     Json(payload): Json<NewSessionRequest>,
 ) -> Result<impl IntoResponse, Error> {
+    if payload.budget_sats == 0 {
+        return Err(Error::Internal("Budget must be greater than 0 sats".to_string()));
+    }
+
     let budget = Satoshis(payload.budget_sats);
     let invoice = state
         .lightning
         .create_invoice(budget, "Infernos Session Budget")
         .await
-        .map_err(|e| Error::Internal(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Failed to create invoice via Lightning backend: {}", e);
+            Error::Lightning(format!("Lightning node failed to create invoice: {}", e))
+        })?;
 
     let uuid = uuid::Uuid::new_v4();
     let session_id = SessionId(uuid);
@@ -66,10 +73,16 @@ pub async fn new_session(
     let macaroon = state
         .macaroon_service
         .mint(&invoice.payment_hash, caveats)
-        .map_err(|e| Error::Internal(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Failed to mint session macaroon: {}", e);
+            Error::Internal(e.to_string())
+        })?;
 
     let challenge = L402Challenge::from_components(&macaroon, &invoice)
-        .map_err(|e| Error::Internal(e.to_string()))?;
+        .map_err(|e| {
+            tracing::error!("Failed to build L402 challenge: {}", e);
+            Error::Internal(e.to_string())
+        })?;
 
     // Respond with 402 Payment Required and the WWW-Authenticate challenge header
     let mut headers = HeaderMap::new();
@@ -312,9 +325,10 @@ impl IntoResponse for Error {
                 (StatusCode::UNAUTHORIZED, self.to_string())
             }
             Error::Forbidden(_) => (StatusCode::FORBIDDEN, self.to_string()),
-            Error::BudgetExhausted(_) => (StatusCode::PAYMENT_REQUIRED, self.to_string()), // Or 403
+            Error::BudgetExhausted(_) => (StatusCode::PAYMENT_REQUIRED, self.to_string()),
             Error::Upstream(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
-            Error::Config(_) | Error::Lightning(_) | Error::Internal(_) => {
+            Error::Lightning(_) => (StatusCode::BAD_GATEWAY, self.to_string()),
+            Error::Config(_) | Error::Internal(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, self.to_string())
             }
         };

@@ -40,7 +40,16 @@ export async function fetchWithL402(url: string, options: RequestInit = {}) {
   }
 
   if (!res.ok) {
-    throw new Error(`API Error: ${res.status}`);
+    let errMsg = `API Error: ${res.status}`;
+    try {
+      const errorJson = await res.json();
+      if (errorJson?.error) {
+        errMsg = errorJson.error;
+      }
+    } catch {
+      // Fallback to status text
+    }
+    throw new Error(errMsg);
   }
 
   return res.json();

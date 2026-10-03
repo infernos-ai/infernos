@@ -14,14 +14,21 @@ import { saveStoredSession, updateStoredSessionBudget, StoredSession } from "@/l
 export default function PlaygroundPage() {
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
   const [sessionData, setSessionData] = useState<SessionData>({ budget_sats: 100, model: "llama3.2" });
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
 
+  const handleBudgetChange = (budget: number) => {
+    setSessionData((prev) => ({ ...prev, budget_sats: budget, remaining_sats: budget }));
+    setErrorMessage(null);
+  };
+
   const handleStartSession = async () => {
     try {
+      setErrorMessage(null);
       setSessionStatus("creating");
       await createSession(sessionData.budget_sats);
-    } catch (e) {
+    } catch (e: any) {
       if (e instanceof L402Error) {
         setSessionStatus("payment_required");
         setSessionData((prev) => ({
@@ -30,11 +37,12 @@ export default function PlaygroundPage() {
           macaroon: e.challenge.macaroon,
           id: e.challenge.parsedCaveats?.session,
           capability: e.challenge.parsedCaveats?.capability,
-          budget_sats: parseInt(e.challenge.parsedCaveats?.budget || "100", 10),
-          remaining_sats: parseInt(e.challenge.parsedCaveats?.budget || "100", 10),
+          budget_sats: parseInt(e.challenge.parsedCaveats?.budget || `${sessionData.budget_sats}`, 10),
+          remaining_sats: parseInt(e.challenge.parsedCaveats?.budget || `${sessionData.budget_sats}`, 10),
         }));
       } else {
         setSessionStatus("error");
+        setErrorMessage(e?.message || "Failed to create session on Infernos node.");
       }
     }
   };
@@ -192,6 +200,8 @@ export default function PlaygroundPage() {
           <ProtocolPanel 
             sessionStatus={sessionStatus} 
             sessionData={sessionData}
+            errorMessage={errorMessage}
+            onBudgetChange={handleBudgetChange}
             onStartSession={handleStartSession} 
           />
         </aside>

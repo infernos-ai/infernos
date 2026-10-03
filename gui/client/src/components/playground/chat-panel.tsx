@@ -38,6 +38,7 @@ export function ChatPanel({
   const [isPayingNwc, setIsPayingNwc] = useState(false);
   const [copied, setCopied] = useState(false);
   const [preimageError, setPreimageError] = useState<string | null>(null);
+  const [isPayingMock, setIsPayingMock] = useState(false);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -45,6 +46,31 @@ export function ChatPanel({
       if (saved) setNwcUri(saved);
     }
   }, []);
+
+  const handleMockPay = async () => {
+    if (!sessionData.invoice) return;
+    setIsPayingMock(true);
+    setPreimageError(null);
+    try {
+      const res = await fetch("/internal/mock/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoice: sessionData.invoice }),
+      });
+      if (!res.ok) {
+        throw new Error("Mock payment endpoint rejected. Make sure backend = 'mock' in config/node.toml");
+      }
+      const data = await res.json();
+      if (data.preimage && onManualPreimage) {
+        onManualPreimage(data.preimage);
+      }
+    } catch (err: any) {
+      console.error("Mock payment error:", err);
+      setPreimageError(err.message || "Failed to settle mock payment");
+    } finally {
+      setIsPayingMock(false);
+    }
+  };
 
   const isInputDisabled =
     sessionStatus === "idle" ||
@@ -218,9 +244,20 @@ export function ChatPanel({
                 <Button
                   className="w-full bg-lightning text-lightning-foreground hover:bg-lightning/90 font-bold py-2.5"
                   onClick={onPayInvoice}
-                  disabled={sessionStatus === "authorizing" || isPayingNwc}
+                  disabled={sessionStatus === "authorizing" || isPayingNwc || isPayingMock}
                 >
                   {sessionStatus === "authorizing" ? "Processing WebLN..." : "Pay with WebLN"}
+                </Button>
+
+                {/* 1-Click Local Mock Simulator Settlement */}
+                <Button
+                  variant="outline"
+                  className="w-full font-mono text-xs border-success/40 text-success hover:bg-success/10 py-2.5 flex items-center justify-center gap-1.5"
+                  onClick={handleMockPay}
+                  disabled={isPayingMock || sessionStatus === "authorizing"}
+                >
+                  <Zap className="w-3.5 h-3.5 text-success" />
+                  {isPayingMock ? "Settling Mock Payment..." : "Settle via Local Mock Simulator (1-Click)"}
                 </Button>
 
                 <div className="relative flex items-center justify-center my-1">
