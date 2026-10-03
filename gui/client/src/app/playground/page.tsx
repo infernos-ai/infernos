@@ -57,6 +57,26 @@ export default function PlaygroundPage() {
     }
   };
 
+  const handlePayWithNwc = async (nwcUri: string) => {
+    setSessionStatus("authorizing");
+    try {
+      const invoiceStr = sessionData.invoice as string;
+      const { connectNWC, requestProvider } = await import('@getalby/bitcoin-connect');
+      connectNWC(nwcUri);
+      const webln = await requestProvider();
+      const paymentResponse = await webln.sendPayment(invoiceStr);
+      setSessionData((prev) => ({
+        ...prev,
+        preimage: paymentResponse.preimage
+      }));
+      setSessionStatus("active");
+    } catch (err: any) {
+      console.error("NWC Payment failed:", err);
+      setSessionStatus("payment_required");
+      throw err;
+    }
+  };
+
   const handleManualPreimage = (preimage: string) => {
     setSessionData((prev) => ({
       ...prev,
@@ -129,6 +149,7 @@ export default function PlaygroundPage() {
             messages={messages}
             isStreaming={isStreaming}
             onPayInvoice={handlePayInvoice}
+            onPayWithNwc={handlePayWithNwc}
             onManualPreimage={handleManualPreimage}
             onSendMessage={handleSendMessage}
           />
