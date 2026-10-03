@@ -46,3 +46,22 @@ network = "testnet"
 
 # Nostr Wallet Connect Configuration (required if backend = "nwc")
 # nwc_uri = "nostr+walletconnect://..."
+
+[discovery]
+# Enable periodic/automatic announcements to Nostr relays
+# Default: false
+# enabled = false
+
+# Nostr relays for broadcasting node presence and model availability
+# Default: ["wss://relay.damus.io", "wss://nos.lol"]
+# relays = ["wss://relay.damus.io", "wss://nos.lol"]
+
+# Friendly public name for the node
+# node_name = "My GPU Cluster"
+
+# Public endpoint URL that callers can reach (e.g., https://node.example.com)
+# public_url = "https://node.example.com"
+
+# Optional private key (nsec) to maintain a persistent Nostr identity
+# nsec = "nsec1..."
+

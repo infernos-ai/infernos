@@ -4,7 +4,40 @@ This guide explains how humans and autonomous agents consume inference from an I
 
 ---
 
-## 1. Using the Command-Line Interface (CLI)
+## 1. Discovering Live Nodes (`infernos discover`)
+
+Before sending inference requests, autonomous agents and callers can dynamically discover active Infernos nodes across Nostr relays without relying on a centralized index:
+
+```bash
+# Discover all active Infernos nodes on default relays
+infernos discover
+
+# Find nodes offering a specific model
+infernos discover --model llama3.2
+
+# Output machine-readable JSON for automated agent pipelines
+infernos discover --model llama3.2 --json
+```
+
+Example JSON output for agent routing:
+```json
+[
+  {
+    "service": "infernos",
+    "name": "Alpha Node",
+    "node_url": "https://alpha.infernos.org",
+    "models": ["llama3.2", "mistral"],
+    "pricing_sats": 10,
+    "network": "mainnet",
+    "version": "0.1.0",
+    "pubkey": "3bf0c63fcb93463407af97b5e09188382d8..."
+  }
+]
+```
+
+---
+
+## 2. Using the Command-Line Interface (CLI)
 
 The easiest way to query an Infernos node directly is via the `infernos call` command.
 

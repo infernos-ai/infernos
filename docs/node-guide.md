@@ -187,3 +187,48 @@ To pull a model into the containerized Ollama instance:
 docker exec -it infernos-ollama ollama pull llama3.2
 ```
 Your node is now accessible on port `8080`!
+
+---
+
+## 6. Decentralized Nostr Announcements & Node Discovery
+
+Infernos nodes can announce their availability to public Nostr relays without depending on any centralized indexing server.
+
+### Configuring Nostr Discovery (`config/node.toml`)
+```toml
+[discovery]
+# Automatically announce to Nostr on node start
+enabled = true
+
+# Relays to broadcast availability to
+relays = [
+    "wss://relay.damus.io",
+    "wss://nos.lol"
+]
+
+# Display name for your node
+node_name = "My GPU Node"
+
+# Publicly reachable endpoint URL
+public_url = "https://infernos.my-domain.org"
+
+# Optional: Nostr private key (nsec) to maintain a persistent identity across announcements
+# nsec = "nsec1..."
+```
+
+### Announcing via CLI
+
+1. **Broadcast on Startup**:
+   ```bash
+   infernos node start --config config/node.toml --announce
+   ```
+
+2. **Broadcast On Demand**:
+   ```bash
+   # Use configuration file
+   infernos node announce --config config/node.toml
+
+   # Override relays or private key
+   infernos node announce --config config/node.toml --relay wss://relay.damus.io
+   ```
+

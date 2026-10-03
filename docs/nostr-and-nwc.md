@@ -101,9 +101,101 @@ infernos start
 
 ---
 
-## 5. Security & Privacy Guarantees
+## 5. Decentralized Node Discovery via Nostr
+
+Infernos eliminates the need for centralized directories or registries. Nodes can broadcast their service availability and capabilities directly over Nostr relays using parameterized addressable events (NIP-89 / Kind `31990`).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Node as Infernos Node (Operator)
+    participant Relay as Nostr Relays (wss://...)
+    participant Agent as Autonomous Agent / User
+
+    Note over Node: Node starts or runs announce
+    Node->>Relay: Publish Kind 31990 Event (Models, Pricing, Endpoint)
+    Note over Agent: Discover nodes by model or network
+    Agent->>Relay: REQ Kind 31990 + #t="infernos" + #m="llama3.2"
+    Relay-->>Agent: Matching Node Announcements
+    Agent->>Node: Directly call inference endpoint over L402
+```
+
+### 5.1 Event Specification (Kind 31990)
+
+| Field / Tag | Specification | Description |
+| :--- | :--- | :--- |
+| **Kind** | `31990` | Parameterized replaceable application handler / service announcement |
+| **`d` Tag** | `["d", "infernos-node"]` | Unique identifier tag |
+| **`t` Tag** | `["t", "infernos"]`, `["t", "ai-inference"]` | Discoverability hashtags |
+| **`endpoint` Tag** | `["endpoint", "https://node.example.com"]` | Public HTTP(S) URL of the Infernos node |
+| **`pricing` Tag** | `["pricing", "10"]` | Default base price in satoshis |
+| **`network` Tag** | `["network", "testnet"]` or `["network", "mainnet"]` | Bitcoin network for Lightning settlement |
+| **`m` Tags** | `["m", "llama3.2"]`, `["m", "mistral"]` | AI models served by this node |
+| **Content** | JSON Payload | Serialized `NodeAnnouncement` schema with version and metadata |
+
+### 5.2 Discovering Nodes via CLI
+
+Callers and agents can discover live nodes querying one or more Nostr relays:
+
+```bash
+# Discover all active Infernos nodes across default relays
+infernos discover
+
+# Filter by a specific model (e.g. llama3.2)
+infernos discover --model llama3.2
+
+# Query custom relays with custom timeout
+infernos discover --relay wss://relay.damus.io --relay wss://nos.lol --timeout-secs 10
+
+# Output machine-readable JSON (ideal for autonomous agent scripts)
+infernos discover --model llama3.2 --json
+```
+
+Sample output:
+```text
+Discovered 2 active Infernos node(s):
+
+NODE NAME            ENDPOINT                       MODELS                   PRICE (SATS)    NETWORK   
+---------------------------------------------------------------------------------------------------------
+Llama Alpha          https://alpha.infernos.org     llama3.2, mistral        10              mainnet   
+GPU Hub Regtest      http://127.0.0.1:8080          llama3.2, deepseek-r1    5               regtest   
+---------------------------------------------------------------------------------------------------------
+```
+
+### 5.3 Publishing Node Announcements
+
+#### Option A: Automatic Broadcast on Node Startup
+Add `--announce` when starting the node:
+```bash
+infernos node start --config config/node.toml --announce
+```
+
+Or enable it permanently in `config/node.toml`:
+```toml
+[discovery]
+enabled = true
+relays = ["wss://relay.damus.io", "wss://nos.lol"]
+node_name = "My GPU Cluster"
+public_url = "https://node.example.com"
+```
+
+#### Option B: Standalone CLI Announce
+Broadcast node availability on demand:
+```bash
+# Announce using node.toml configuration
+infernos node announce --config config/node.toml
+
+# Announce to specific relays with custom nsec key
+infernos node announce --config config/node.toml --relay wss://relay.damus.io --nsec nsec1...
+```
+
+---
+
+## 6. Security & Privacy Guarantees
 
 1. **End-to-End Encryption (NIP-04 / NIP-44)**: All NIP-47 requests and responses passing through Nostr relays are encrypted using Diffie-Hellman shared secrets. Relay operators cannot read invoices, amounts, or preimages.
 2. **Spend Limits & Granular Permissions**: NWC connections can be scoped in the user's wallet with spending allowances (e.g., maximum 500 sats per day), preventing rogue spending.
 3. **No Private Keys Exposed**: The Infernos client only holds a temporary connection secret, never the master wallet seed or Lightning private keys.
 4. **Zero Prompt Leakage**: Prompts and AI completions are sent strictly over HTTPS directly between caller and node; they are never published to Nostr relays.
+5. **Cryptographic Identity**: Node announcements are signed with standard Schnorr signatures (NIP-01). Callers can verify that announcements originate authentically from the node operator's public key.
+
