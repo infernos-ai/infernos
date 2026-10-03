@@ -1,6 +1,4 @@
-"use client";
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SatsAmount } from "@/components/infernos/sats-amount";
 import { StatusBadge } from "@/components/infernos/status-badge";
 import { NodeStatus } from "@/components/infernos/node-status";
@@ -9,6 +7,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, Zap, Activity, ChevronDown, ChevronRight, Key, Cpu } from "lucide-react";
 import { SessionStatus, SessionData } from "@/types/session";
+import { fetchNodeHealth } from "@/lib/api/node";
 
 interface ProtocolPanelProps {
   sessionStatus: SessionStatus;
@@ -18,6 +17,25 @@ interface ProtocolPanelProps {
 
 export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: ProtocolPanelProps) {
   const [l402Expanded, setL402Expanded] = useState(false);
+  const [isNodeOnline, setIsNodeOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function checkHealth() {
+      try {
+        await fetchNodeHealth();
+        if (isMounted) setIsNodeOnline(true);
+      } catch (e) {
+        if (isMounted) setIsNodeOnline(false);
+      }
+    }
+    checkHealth();
+    const interval = setInterval(checkHealth, 10000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
@@ -27,7 +45,7 @@ export function ProtocolPanel({ sessionStatus, sessionData, onStartSession }: Pr
 
       <div className="p-4 flex flex-col gap-6">
         {/* Node Status */}
-        <NodeStatus isOnline={true} address="127.0.0.1:8080" />
+        <NodeStatus isOnline={isNodeOnline ?? true} address="127.0.0.1:8080" />
 
         {/* Session Card */}
         <Card className="p-4 flex flex-col gap-4 bg-background">
