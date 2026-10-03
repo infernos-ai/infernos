@@ -9,11 +9,11 @@ import { createSession } from "@/lib/api/sessions";
 import { L402Error } from "@/types/api";
 import { streamChatCompletion } from "@/lib/api/inference";
 import { Message } from "@/types/inference";
-// Use dynamic import inside the handler for requestProvider to avoid SSR errors
-// import { requestProvider } from '@getalby/bitcoin-connect';
+import { saveStoredSession, updateStoredSessionBudget, StoredSession } from "@/lib/storage/sessions";
+
 export default function PlaygroundPage() {
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
-  const [sessionData, setSessionData] = useState<SessionData>({ budget_sats: 10000 });
+  const [sessionData, setSessionData] = useState<SessionData>({ budget_sats: 100, model: "llama3.2" });
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
 
@@ -39,6 +39,28 @@ export default function PlaygroundPage() {
     }
   };
 
+  const activateSessionWithPreimage = (preimage: string) => {
+    setSessionData((prev) => {
+      const updated = { ...prev, preimage };
+      const sessionRecord: StoredSession = {
+        id: updated.id || `sess_${Date.now()}`,
+        status: "active",
+        model: updated.model || "llama3.2",
+        capability: updated.capability || "inference",
+        budget_sats: updated.budget_sats || 100,
+        remaining_sats: updated.remaining_sats ?? updated.budget_sats ?? 100,
+        macaroon: updated.macaroon || "",
+        preimage,
+        invoice: updated.invoice,
+        created_at: new Date().toISOString(),
+        requests_count: 0,
+      };
+      saveStoredSession(sessionRecord);
+      return updated;
+    });
+    setSessionStatus("active");
+  };
+
   const handlePayInvoice = async () => {
     setSessionStatus("authorizing");
     try {
@@ -46,11 +68,7 @@ export default function PlaygroundPage() {
       const { requestProvider } = await import('@getalby/bitcoin-connect');
       const webln = await requestProvider();
       const paymentResponse = await webln.sendPayment(invoiceStr);
-      setSessionData((prev) => ({
-        ...prev,
-        preimage: paymentResponse.preimage
-      }));
-      setSessionStatus("active");
+      activateSessionWithPreimage(paymentResponse.preimage);
     } catch (err: any) {
       console.error("WebLN Payment failed:", err);
       setSessionStatus("payment_required");
@@ -65,11 +83,7 @@ export default function PlaygroundPage() {
       connectNWC(nwcUri);
       const webln = await requestProvider();
       const paymentResponse = await webln.sendPayment(invoiceStr);
-      setSessionData((prev) => ({
-        ...prev,
-        preimage: paymentResponse.preimage
-      }));
-      setSessionStatus("active");
+      activateSessionWithPreimage(paymentResponse.preimage);
     } catch (err: any) {
       console.error("NWC Payment failed:", err);
       setSessionStatus("payment_required");
@@ -78,11 +92,11 @@ export default function PlaygroundPage() {
   };
 
   const handleManualPreimage = (preimage: string) => {
-    setSessionData((prev) => ({
-      ...prev,
-      preimage
-    }));
-    setSessionStatus("active");
+    activateSessionWithPreimage(preimage);
+  };
+
+  const handleSelectModel = (model: string) => {
+    setSessionData((prev) => ({ ...prev, model }));
   };
 
   const handleSendMessage = async (content: string) => {
@@ -115,10 +129,27 @@ export default function PlaygroundPage() {
           });
         },
         (sats) => {
-          setSessionData((prev) => ({
-            ...prev,
-            remaining_sats: Math.max(0, (prev.remaining_sats || prev.budget_sats || 0) - sats)
-          }));
+          setSessionData((prev) => {
+            const nextRemaining = Math.max(0, (prev.remaining_sats || prev.budget_sats || 0) - sats);
+            if (prev.id) {
+              updateStoredSessionBudget(prev.id, nextRemaining, true);
+            }
+            return {
+              ...prev,
+              remaining_sats: nextRemaining
+            };
+          });
+        },
+        (remaining) => {
+          setSessionData((prev) => {
+            if (prev.id) {
+              updateStoredSessionBudget(prev.id, remaining, false);
+            }
+            return {
+              ...prev,
+              remaining_sats: remaining
+            };
+          });
         }
       );
     } catch (e) {
@@ -152,6 +183,7 @@ export default function PlaygroundPage() {
             onPayWithNwc={handlePayWithNwc}
             onManualPreimage={handleManualPreimage}
             onSendMessage={handleSendMessage}
+            onSelectModel={handleSelectModel}
           />
         </section>
 

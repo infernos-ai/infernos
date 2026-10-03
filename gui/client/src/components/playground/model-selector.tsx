@@ -1,16 +1,60 @@
+"use client";
 
+import { useEffect, useState } from "react";
 import { Cpu } from "lucide-react";
+import { fetchNodeModels } from "@/lib/api/node";
 
-export function ModelSelector() {
-  // Since we haven't added shadcn Select yet, we'll just use a native select styled properly for now 
-  // or a placeholder if we want to run `shadcn add select` later. For UI-3, a styled native select is fine.
+interface ModelSelectorProps {
+  value?: string;
+  onChange?: (model: string) => void;
+}
+
+export function ModelSelector({ value = "llama3.2", onChange }: ModelSelectorProps) {
+  const [models, setModels] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadModels() {
+      try {
+        const fetched = await fetchNodeModels();
+        if (isMounted && fetched.length > 0) {
+          const modelIds = fetched.map((m) => m.id);
+          setModels(modelIds);
+          if (onChange && !modelIds.includes(value)) {
+            onChange(modelIds[0]);
+          }
+        } else if (isMounted) {
+          setModels(["llama3.2", "mistral", "qwen2"]);
+        }
+      } catch (e) {
+        if (isMounted) {
+          setModels(["llama3.2", "mistral", "qwen2"]);
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    }
+    loadModels();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <div className="flex items-center gap-2">
       <Cpu className="w-4 h-4 text-muted-foreground" />
-      <select className="h-8 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-        <option value="llama3.2">llama3.2</option>
-        <option value="mistral">mistral</option>
-        <option value="qwen2">qwen2</option>
+      <select
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        disabled={isLoading}
+        className="h-8 rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer"
+      >
+        {models.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
       </select>
     </div>
   );

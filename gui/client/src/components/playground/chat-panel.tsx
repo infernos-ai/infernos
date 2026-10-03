@@ -17,6 +17,7 @@ interface ChatPanelProps {
   onPayWithNwc?: (nwcUri: string) => Promise<void>;
   onManualPreimage?: (preimage: string) => void;
   onSendMessage: (content: string) => void;
+  onSelectModel?: (model: string) => void;
 }
 
 export function ChatPanel({
@@ -28,6 +29,7 @@ export function ChatPanel({
   onPayWithNwc,
   onManualPreimage,
   onSendMessage,
+  onSelectModel,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const [manualPreimage, setManualPreimage] = useState("");
@@ -129,7 +131,7 @@ export function ChatPanel({
       {/* Chat Header */}
       <div className="h-14 border-b border-border/40 flex items-center px-4 justify-between bg-background/95 z-10">
         <h2 className="font-semibold text-sm">AI Playground</h2>
-        <ModelSelector />
+        <ModelSelector value={sessionData.model || "llama3.2"} onChange={onSelectModel} />
       </div>
 
       {/* Status Bar */}
