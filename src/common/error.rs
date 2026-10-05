@@ -19,6 +19,12 @@ pub enum Error {
     #[error("L402 verification failed: {0}")]
     VerificationFailed(String),
 
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Forbidden: {0}")]
+    Forbidden(String),
+
     #[error("Session budget exhausted: {0}")]
     BudgetExhausted(String),
 

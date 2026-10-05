@@ -2,10 +2,15 @@ use crate::client::budget::ClientBudgetTracker;
 use crate::client::error::ClientError;
 use crate::client::openai::{ChatCompletionRequest, ChatCompletionResponse};
 use crate::client::pay::{L402PaymentHandler, LightningPaymentProvider};
+use bytes::Bytes;
+use futures_util::stream::Stream;
 use reqwest::{header, Client};
 use serde_json::json;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::RwLock;
+
+pub type ChatStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>;
 
 pub struct InfernosClient {
     pub node_url: String,
@@ -14,7 +19,7 @@ pub struct InfernosClient {
     payment_handler: L402PaymentHandler,
 
     /// Cached L402 authorization header
-    l402_auth: RwLock<Option<String>>,
+    pub l402_auth: RwLock<Option<String>>,
 }
 
 pub struct InfernosClientBuilder {
@@ -142,9 +147,11 @@ impl InfernosClient {
         if response.status() == reqwest::StatusCode::PAYMENT_REQUIRED {
             // Note: chat/completions doesn't return a new WWW-Authenticate header in this design
             // Instead we would have to create a new session. We return an error telling caller to do so.
-            return Err(ClientError::Protocol(
-                "Session expired or budget exhausted. Call create_session to renew.".to_string(),
-            ));
+
+            // Clear the stale cached authorization
+            *self.l402_auth.write().unwrap() = None;
+
+            return Err(ClientError::SessionExpired);
         }
 
         if !response.status().is_success() {
@@ -169,5 +176,60 @@ impl InfernosClient {
 
         let chat_resp = response.json::<ChatCompletionResponse>().await?;
         Ok(chat_resp)
+    }
+
+    pub async fn chat_stream(
+        &self,
+        req: &ChatCompletionRequest,
+    ) -> Result<ChatStream, ClientError> {
+        let expected_cost_sats = 10;
+        if let Some(tracker) = &self.budget_tracker {
+            tracker.verify_can_afford(expected_cost_sats)?;
+        }
+
+        let url = format!(
+            "{}/v1/chat/completions",
+            self.node_url.trim_end_matches('/')
+        );
+
+        let mut req_clone = req.clone();
+        req_clone.stream = Some(true);
+
+        let auth = { self.l402_auth.read().unwrap().clone() };
+
+        let mut request_builder = self.http_client.post(&url).json(&req_clone);
+
+        if let Some(l402) = auth {
+            request_builder = request_builder.header(header::AUTHORIZATION, l402);
+        }
+
+        let response = request_builder.send().await?;
+
+        if response.status() == reqwest::StatusCode::PAYMENT_REQUIRED {
+            *self.l402_auth.write().unwrap() = None;
+            return Err(ClientError::SessionExpired);
+        }
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(ClientError::Protocol(format!(
+                "Server returned {}: {}",
+                status, text
+            )));
+        }
+
+        if let Some(tracker) = &self.budget_tracker {
+            let charged_sats = response
+                .headers()
+                .get("X-Infernos-Charged-Sats")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(expected_cost_sats);
+
+            tracker.spend(charged_sats)?;
+        }
+
+        Ok(Box::pin(response.bytes_stream()))
     }
 }

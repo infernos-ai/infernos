@@ -117,7 +117,7 @@ impl L402Verifier {
 mod tests {
     use super::*;
     use crate::node::gate::macaroon::Caveat;
-    use crate::node::lightning::backend::MockLightningBackend;
+    use crate::node::lightning::mock::MockLightningBackend;
 
     fn test_fixtures() -> (MacaroonService, MockLightningBackend) {
         let service = MacaroonService::new(

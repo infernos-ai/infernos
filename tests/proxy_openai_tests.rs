@@ -168,3 +168,43 @@ async fn test_proxy_supports_streaming() {
     let full_output = chunks.join("");
     assert!(full_output.contains("data: [DONE]"));
 }
+
+#[tokio::test]
+async fn test_proxy_list_models_success() {
+    let mock_server = MockServer::start().await;
+    let proxy = OpenAiProxy::new(mock_server.uri());
+
+    let models_resp = json!({
+        "object": "list",
+        "data": [
+            {"id": "deepseek-coder:6.7b", "object": "model", "created": 1700000000, "owned_by": "ollama"},
+            {"id": "llama3.2:latest", "object": "model", "created": 1700000001, "owned_by": "ollama"}
+        ]
+    });
+
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&models_resp))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let response = proxy.list_models().await.expect("Failed to list models");
+    assert_eq!(response, models_resp);
+}
+
+#[tokio::test]
+async fn test_proxy_list_models_error() {
+    let mock_server = MockServer::start().await;
+    let proxy = OpenAiProxy::new(mock_server.uri());
+
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(502).set_body_string("Bad Gateway"))
+        .expect(1)
+        .mount(&mock_server)
+        .await;
+
+    let result = proxy.list_models().await;
+    assert!(result.is_err());
+}

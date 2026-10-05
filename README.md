@@ -13,6 +13,7 @@ Infernos turns any machine running open-weight AI models into a self-sovereign, 
 
 - **Self-Sovereign Operator Nodes**: Run open-weight models on your own hardware via Ollama or any OpenAI-compatible engine.
 - **Permissionless L402 Payments**: Access inference on a per-request or per-token basis authenticated via Lightning Network preimages and macaroons.
+- **Decentralized Node Discovery**: Discover and announce inference nodes dynamically via Nostr relays (Kind `31990`) with zero central registries.
 - **Session Budgets**: Strict, enforceable expenditure limits for multi-step agent workflows.
 - **Privacy by Default**: Zero prompt logging. Prompts and completions are never persisted or exposed in logs.
 - **OpenAI-Compatible Surface**: Seamless drop-in compatibility with standard tooling, SDKs, and autonomous agent frameworks.
@@ -78,7 +79,7 @@ Copy the example configuration:
 ```bash
 cp config/node.example.toml config/node.toml
 ```
-Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, and your Lightning backend (`mock` for local dev/testing, `lnd`, or `nwc`).
+Configure your upstream inference runtime (`http://127.0.0.1:11434` for Ollama), model pricing in sats, your Lightning backend (`lnd`, `mock`, or `nwc`), and target Bitcoin network (`network = "testnet"` for testing with zero-value testnet sats or `network = "mainnet"` for production sats).
 
 #### Step B: Start the Node
 ```bash
@@ -113,18 +114,21 @@ Consume inference without creating accounts or acquiring centralized API keys.
 #### Method A: Command-Line Interface (CLI)
 
 ```bash
-# Pay-per-request query
+# 1. Discover active nodes announced on Nostr relays
+cargo run -- discover --model llama3.2
+
+# 2. Query an Infernos node (defaults to --node http://127.0.0.1:8080)
 cargo run -- call \
-  --endpoint http://127.0.0.1:8080 \
-  --model llama3 \
+  --node http://127.0.0.1:8080 \
+  --model llama3.2 \
   --prompt "Explain the Lightning Network"
 
-# Autonomous query with strict Session Budget protection (e.g. 500 Sats)
+# 3. Query with custom session budget (e.g. 500 Sats)
 cargo run -- call \
-  --endpoint http://127.0.0.1:8080 \
-  --model llama3 \
+  --node http://127.0.0.1:8080 \
+  --model llama3.2 \
   --budget 500 \
-  --prompt "Analyze this smart contract and summarize vulnerabilities"
+  --prompt "Explain Bitcoin L402 in one sentence"
 ```
 
 #### Method B: Rust SDK / Agent Integration
@@ -166,9 +170,11 @@ Any existing agent framework (LangChain, AutoGen, CrewAI, or official OpenAI SDK
 - [Architecture & System Design](docs/architecture.md)
 - [Operator Guide](docs/node-guide.md)
 - [Caller & Agent Guide](docs/caller-guide.md)
+- [Nostr & NIP-47 (NWC) Guide](docs/nostr-and-nwc.md)
 - [L402 & Payment Protocol](docs/l402-and-payments.md)
 - [Session Budgets](docs/session-budgets.md)
 - [Privacy Model & Guarantees](docs/privacy.md)
+- [GUI Architecture & Real-Data Engine](docs/gui-architecture-and-audit.md)
 - [Development & Contributing](docs/development.md)
 
 ---

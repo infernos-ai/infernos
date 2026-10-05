@@ -19,8 +19,12 @@ pub enum Caveat {
     Session(String),
     /// Maximum Satoshis budget allocated for this token.
     Budget(u64),
+    Capability(String),
     /// Custom key-value predicate.
-    Custom { key: String, value: String },
+    Custom {
+        key: String,
+        value: String,
+    },
 }
 
 impl Caveat {
@@ -38,6 +42,9 @@ impl Caveat {
         if let Some(rest) = trimmed.strip_prefix("budget = ") {
             return rest.trim().parse::<u64>().ok().map(Caveat::Budget);
         }
+        if let Some(rest) = trimmed.strip_prefix("capability = ") {
+            return Some(Caveat::Capability(rest.trim().to_string()));
+        }
         if let Some((k, v)) = trimmed.split_once('=') {
             return Some(Caveat::Custom {
                 key: k.trim().to_string(),
@@ -53,7 +60,15 @@ impl Caveat {
             Caveat::Model(m) => format!("model = {}", m),
             Caveat::Session(s) => format!("session = {}", s),
             Caveat::Budget(b) => format!("budget = {}", b),
+            Caveat::Capability(c) => format!("capability = {}", c),
             Caveat::Custom { key, value } => format!("{} = {}", key, value),
+        }
+    }
+
+    pub fn capability(&self) -> Option<&str> {
+        match self {
+            Caveat::Capability(value) => Some(value.as_str()),
+            _ => None,
         }
     }
 }
@@ -88,6 +103,13 @@ impl Macaroon {
     /// Get the associated payment hash as a strongly-typed `PaymentHash`.
     pub fn payment_hash(&self) -> PaymentHash {
         PaymentHash(self.identifier.clone())
+    }
+
+    /// Extract the capability from the caveats if present.
+    pub fn capability(&self) -> Option<String> {
+        self.caveats
+            .iter()
+            .find_map(|raw| Caveat::parse(raw).and_then(|c| c.capability().map(String::from)))
     }
 }
 

@@ -6,7 +6,7 @@ use infernos::config::schema::{NodeConfig, PricingConfig};
 use infernos::node::api::routes::create_routes;
 use infernos::node::api::AppState;
 use infernos::node::gate::{MacaroonService, SessionBudgetManager};
-use infernos::node::lightning::backend::MockLightningBackend;
+use infernos::node::lightning::mock::MockLightningBackend;
 use infernos::node::proxy::openai::OpenAiProxy;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
@@ -40,21 +40,23 @@ fn setup_app() -> axum::Router {
         server: infernos::config::schema::ServerConfig {
             host: "127.0.0.1".to_string(),
             port: 8080,
+            admin_token: None,
         },
-        pricing: PricingConfig {
-            default_price_sats: infernos::common::types::Satoshis(10),
-        },
+        pricing: PricingConfig::new(infernos::common::types::Satoshis(10)),
         upstream: infernos::config::schema::UpstreamConfig {
             url: "http://localhost:8080".to_string(),
         },
         lightning: infernos::config::schema::LightningConfig::default(),
         data_dir: ".infernos_test_data".to_string(),
+        ..Default::default()
     };
 
     let proxy = OpenAiProxy::new(config.upstream.url.clone());
 
+    let config_arc = Arc::new(config);
     let state = AppState {
-        config: Arc::new(config),
+        config: config_arc.clone(),
+        live_pricing: Arc::new(tokio::sync::RwLock::new(config_arc.pricing.clone())),
         lightning: Arc::new(MockLightningBackend::new()),
         budget_manager: Arc::new(SessionBudgetManager::new()),
         macaroon_service: Arc::new(MacaroonService::new(
@@ -62,6 +64,8 @@ fn setup_app() -> axum::Router {
             "infernos-node",
         )),
         proxy,
+        stats: Arc::new(infernos::node::api::NodeStats::default()),
+        admin_token: Arc::new("test-admin-token".to_string()),
     };
 
     create_routes(state).layer(
