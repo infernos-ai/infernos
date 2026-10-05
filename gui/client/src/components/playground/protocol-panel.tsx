@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { SatsAmount } from "@/components/infernos/sats-amount";
 import { StatusBadge } from "@/components/infernos/status-badge";
 import { NodeStatus } from "@/components/infernos/node-status";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { ShieldCheck, Zap, Activity, ChevronDown, ChevronRight, Key, Cpu, AlertTriangle, Coins } from "lucide-react";
+import { ShieldCheck, Zap, Activity, ChevronDown, ChevronRight, Key, Cpu, AlertTriangle, Coins, PlusCircle } from "lucide-react";
 import { SessionStatus, SessionData } from "@/types/session";
 import { fetchNodeHealth } from "@/lib/api/node";
 
@@ -15,6 +16,7 @@ interface ProtocolPanelProps {
   errorMessage?: string | null;
   onBudgetChange?: (budget: number) => void;
   onStartSession: () => void;
+  onResetSession?: () => void;
 }
 
 export function ProtocolPanel({
@@ -23,6 +25,7 @@ export function ProtocolPanel({
   errorMessage,
   onBudgetChange,
   onStartSession,
+  onResetSession,
 }: ProtocolPanelProps) {
   const [l402Expanded, setL402Expanded] = useState(false);
   const [isNodeOnline, setIsNodeOnline] = useState<boolean | null>(null);
@@ -186,6 +189,23 @@ export function ProtocolPanel({
                   }
                   className="h-2"
                 />
+              </div>
+
+              {/* Session Actions */}
+              <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
+                <Link href="/sessions" className="text-muted-foreground hover:text-foreground text-[11px] underline">
+                  All Sessions →
+                </Link>
+                {onResetSession && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onResetSession}
+                    className="h-7 text-xs flex items-center gap-1 hover:bg-primary/10 hover:text-primary"
+                  >
+                    <PlusCircle className="w-3 h-3" /> New Session
+                  </Button>
+                )}
               </div>
             </div>
           )}

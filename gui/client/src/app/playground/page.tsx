@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Navbar } from "@/components/layout/navbar";
 import { ChatPanel } from "@/components/playground/chat-panel";
 import { ProtocolPanel } from "@/components/playground/protocol-panel";
@@ -9,7 +9,17 @@ import { createSession } from "@/lib/api/sessions";
 import { L402Error } from "@/types/api";
 import { streamChatCompletion } from "@/lib/api/inference";
 import { Message } from "@/types/inference";
-import { saveStoredSession, updateStoredSessionBudget, StoredSession } from "@/lib/storage/sessions";
+import { 
+  saveStoredSession, 
+  updateStoredSessionBudget, 
+  updateStoredSessionMessages,
+  getStoredSessionById,
+  getStoredSessions,
+  setActiveSessionId,
+  getActiveSessionId,
+  clearActiveSessionId,
+  StoredSession 
+} from "@/lib/storage/sessions";
 
 export default function PlaygroundPage() {
   const [sessionStatus, setSessionStatus] = useState<SessionStatus>("idle");
@@ -18,9 +28,71 @@ export default function PlaygroundPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
 
+  // Restore active or requested session on page mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const querySessionId = params.get("session");
+    const targetId = querySessionId || getActiveSessionId();
+
+    if (targetId) {
+      const stored = getStoredSessionById(targetId);
+      if (stored) {
+        setActiveSessionId(stored.id);
+        setSessionData({
+          id: stored.id,
+          model: stored.model || "llama3.2",
+          capability: stored.capability || "inference",
+          budget_sats: stored.budget_sats,
+          remaining_sats: stored.remaining_sats,
+          macaroon: stored.macaroon,
+          preimage: stored.preimage,
+          invoice: stored.invoice,
+        });
+        if (stored.messages && stored.messages.length > 0) {
+          setMessages(stored.messages);
+        }
+        setSessionStatus(stored.status === "active" ? "active" : "idle");
+        return;
+      }
+    }
+
+    // Fallback: check if there is an active stored session with budget remaining
+    const all = getStoredSessions();
+    const latestActive = all.find((s) => s.status === "active");
+    if (latestActive) {
+      setActiveSessionId(latestActive.id);
+      setSessionData({
+        id: latestActive.id,
+        model: latestActive.model || "llama3.2",
+        capability: latestActive.capability || "inference",
+        budget_sats: latestActive.budget_sats,
+        remaining_sats: latestActive.remaining_sats,
+        macaroon: latestActive.macaroon,
+        preimage: latestActive.preimage,
+        invoice: latestActive.invoice,
+      });
+      if (latestActive.messages && latestActive.messages.length > 0) {
+        setMessages(latestActive.messages);
+      }
+      setSessionStatus("active");
+    }
+  }, []);
+
   const handleBudgetChange = (budget: number) => {
     setSessionData((prev) => ({ ...prev, budget_sats: budget, remaining_sats: budget }));
     setErrorMessage(null);
+  };
+
+  const handleResetSession = () => {
+    clearActiveSessionId();
+    setSessionStatus("idle");
+    setSessionData({ budget_sats: 100, model: "llama3.2" });
+    setMessages([]);
+    setErrorMessage(null);
+    if (typeof window !== "undefined" && window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   };
 
   const handleStartSession = async () => {
@@ -50,8 +122,9 @@ export default function PlaygroundPage() {
   const activateSessionWithPreimage = (preimage: string) => {
     setSessionData((prev) => {
       const updated = { ...prev, preimage };
+      const sessionId = updated.id || `sess_${Date.now()}`;
       const sessionRecord: StoredSession = {
-        id: updated.id || `sess_${Date.now()}`,
+        id: sessionId,
         status: "active",
         model: updated.model || "llama3.2",
         capability: updated.capability || "inference",
@@ -62,9 +135,11 @@ export default function PlaygroundPage() {
         invoice: updated.invoice,
         created_at: new Date().toISOString(),
         requests_count: 0,
+        messages: [],
       };
       saveStoredSession(sessionRecord);
-      return updated;
+      setActiveSessionId(sessionId);
+      return { ...updated, id: sessionId };
     });
     setSessionStatus("active");
   };
@@ -113,11 +188,16 @@ export default function PlaygroundPage() {
     const newUserMessage: Message = { role: "user", content };
     const newMessages = [...messages, newUserMessage];
     setMessages(newMessages);
+    if (sessionData.id) {
+      updateStoredSessionMessages(sessionData.id, newMessages);
+    }
     setIsStreaming(true);
 
     try {
       // Add a placeholder assistant message
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+      let accumulatedContent = "";
 
       await streamChatCompletion(
         {
@@ -127,6 +207,7 @@ export default function PlaygroundPage() {
         sessionData.macaroon || "",
         sessionData.preimage || "",
         (chunk) => {
+          accumulatedContent += chunk;
           setMessages((prev) => {
             const updated = [...prev];
             const last = updated[updated.length - 1];
@@ -160,6 +241,12 @@ export default function PlaygroundPage() {
           });
         }
       );
+
+      // Persist completed conversation
+      if (sessionData.id) {
+        const finalized = [...newMessages, { role: "assistant" as const, content: accumulatedContent }];
+        updateStoredSessionMessages(sessionData.id, finalized);
+      }
     } catch (e) {
       console.error("Inference Error:", e);
       setMessages((prev) => {
@@ -167,6 +254,9 @@ export default function PlaygroundPage() {
         const last = updated[updated.length - 1];
         if (last && last.role === "assistant") {
           updated[updated.length - 1] = { ...last, content: last.content + "\n\n**[Connection to Infernos node failed or was unauthorized.]**" };
+        }
+        if (sessionData.id) {
+          updateStoredSessionMessages(sessionData.id, updated);
         }
         return updated;
       });
@@ -202,7 +292,8 @@ export default function PlaygroundPage() {
             sessionData={sessionData}
             errorMessage={errorMessage}
             onBudgetChange={handleBudgetChange}
-            onStartSession={handleStartSession} 
+            onStartSession={handleStartSession}
+            onResetSession={handleResetSession}
           />
         </aside>
       </main>
